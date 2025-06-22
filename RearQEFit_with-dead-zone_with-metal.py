@@ -234,31 +234,30 @@ class IQEFitApp:
 
 
     def browse_eqe(self, mode):
+        """Load an EQE CSV file for the chosen illumination mode."""
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
-        if file:
-            if mode == "front":
-                self.eqe_file_front.set(file)
-                if self.rfl_file_front.get():
-                    self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
-            elif mode == "rear":
-                self.eqe_file_rear.set(file)
-                if self.rfl_file_rear.get():
-                    self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
+        if not file:
+            return
 
+        var = self.eqe_file_front if mode == "front" else self.eqe_file_rear
+        var.set(file)
 
-
+        rfl_var = self.rfl_file_front if mode == "front" else self.rfl_file_rear
+        if rfl_var.get():
+            self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
 
     def browse_reflectance(self, mode):
+        """Load a reflectance CSV file for the selected illumination mode."""
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
-        if file:
-            if mode == "front":
-                self.rfl_file_front.set(file)
-                if self.eqe_file_front.get():
-                    self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
-            elif mode == "rear":
-                self.rfl_file_rear.set(file)
-                if self.eqe_file_rear.get():
-                    self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
+        if not file:
+            return
+
+        var = self.rfl_file_front if mode == "front" else self.rfl_file_rear
+        var.set(file)
+
+        eqe_var = self.eqe_file_front if mode == "front" else self.eqe_file_rear
+        if eqe_var.get():
+            self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
     
     def browse_metal_file(self):
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
@@ -440,11 +439,6 @@ class IQEFitApp:
         
         # ❗ Store the window ID so we can resize it later
         window_id = scroll_canvas.create_window((0, 0), window=self.frame_left, anchor="nw")
-        
-        
-        # ❗ Dynamically match frame_left width to the canvas width
-        def resize_frame_left(event):
-            scroll_canvas.itemconfig(window_id, width=event.width)
         
         def on_canvas_configure(event):
             scroll_canvas.itemconfig(window_id, width=event.width)
@@ -1039,10 +1033,8 @@ class IQEFitApp:
             wavelength = wl
         else:
             wavelength = wl_front  # used for initial nk interpolation
-        
-        n_cigs, k_cigs = load_and_interpolate_nk_csv('CIGSu.csv', wavelength)
 
-        
+
         params = {param: float(self.entries[param].get()) for param in self.entries}
         self.stored_values = params.copy()
     
@@ -1266,7 +1258,6 @@ class IQEFitApp:
                         for i, param in enumerate(parameters_list):
                             if not fixed_flags[i]:
                                 self.update_entry(param, res.x[idx])
-                                self.update_entry(param, res.x[idx])
                                 idx += 1
                         
                         # --- Plot updated fit ---
@@ -1328,10 +1319,11 @@ class IQEFitApp:
 
 
 # --- Run app ---
-root = tk.Tk()
-app = IQEFitApp(root)
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = IQEFitApp(root)
 
-root.geometry("1400x900")
-root.minsize(1024, 700)
+    root.geometry("1400x900")
+    root.minsize(1024, 700)
 
-root.mainloop()
+    root.mainloop()
