@@ -196,22 +196,36 @@ class IQEFitApp:
 
 
     def load_data_files(self, illumination_mode):
-        if illumination_mode=="front":
-            eqe_df = pd.read_csv(self.eqe_file_front.get(), header=None)
-            reflect_df = pd.read_csv(self.rfl_file_front.get(), header=None)
-        elif illumination_mode=="rear":
-            eqe_df = pd.read_csv(self.eqe_file_rear.get(), header=None)
-            reflect_df = pd.read_csv(self.rfl_file_rear.get(), header=None)
-        
-        eqe_df.columns = ['wavelength', 'EQE']
-        reflect_df.columns = ['wavelength', 'Reflectance']
-        eqe_df = eqe_df[(eqe_df['wavelength'] >= 310) & (eqe_df['wavelength'] <= 830)]
-        wl = eqe_df['wavelength'].values
-        EQE = eqe_df['EQE'].values
-        reflect_interp = interp1d(reflect_df['wavelength'], reflect_df['Reflectance'], bounds_error=False, fill_value="extrapolate")
-        Reflectance = reflect_interp(wl)
-            
-        return wl, EQE, Reflectance
+        """Load EQE and reflectance data for the selected illumination mode."""
+        if illumination_mode == "front" or illumination_mode == "both":
+            eqe_front = pd.read_csv(self.eqe_file_front.get(), header=None)
+            rfl_front = pd.read_csv(self.rfl_file_front.get(), header=None)
+
+            eqe_front.columns = ["wavelength", "EQE"]
+            rfl_front.columns = ["wavelength", "Reflectance"]
+            eqe_front = eqe_front[(eqe_front["wavelength"] >= 310) & (eqe_front["wavelength"] <= 830)]
+            wl_front = eqe_front["wavelength"].values
+            eqe_front_val = eqe_front["EQE"].values
+            rfl_interp_f = interp1d(rfl_front["wavelength"], rfl_front["Reflectance"], bounds_error=False, fill_value="extrapolate")
+            refl_front = rfl_interp_f(wl_front)
+        if illumination_mode == "rear" or illumination_mode == "both":
+            eqe_rear = pd.read_csv(self.eqe_file_rear.get(), header=None)
+            rfl_rear = pd.read_csv(self.rfl_file_rear.get(), header=None)
+
+            eqe_rear.columns = ["wavelength", "EQE"]
+            rfl_rear.columns = ["wavelength", "Reflectance"]
+            eqe_rear = eqe_rear[(eqe_rear["wavelength"] >= 310) & (eqe_rear["wavelength"] <= 830)]
+            wl_rear = eqe_rear["wavelength"].values
+            eqe_rear_val = eqe_rear["EQE"].values
+            rfl_interp_r = interp1d(rfl_rear["wavelength"], rfl_rear["Reflectance"], bounds_error=False, fill_value="extrapolate")
+            refl_rear = rfl_interp_r(wl_rear)
+
+        if illumination_mode == "front":
+            return wl_front, eqe_front_val, refl_front
+        elif illumination_mode == "rear":
+            return wl_rear, eqe_rear_val, refl_rear
+        else:
+            return wl_front, eqe_front_val, refl_front, wl_rear, eqe_rear_val, refl_rear
 
     def browse_eqe(self,illumination_mode):
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
@@ -247,13 +261,14 @@ class IQEFitApp:
         self.entries = {}
         self.check_vars = {}
     
-        mode = self.illumination_mode.get()  # 'front' or 'rear'
+        mode = self.illumination_mode.get()
         initials = get_initial_params(mode)
         bounds = get_param_bounds(mode)
-        
+
         default_fixed = {
             "rear": ["CIGS", "Recomb", "dDEAD"],
-            "front": ["AZO", "ZnO", "CdS", "CIGS", "dDEAD", "Recomb"]
+            "front": ["AZO", "ZnO", "CdS", "CIGS", "dDEAD", "Recomb"],
+            "both": ["AZO", "ZnO", "CdS", "CIGS", "dDEAD", "Recomb"]
         }
     
         for param in bounds:
@@ -445,17 +460,11 @@ class IQEFitApp:
             self.ax_collection = self.fig_combined.add_subplot(gs[2])
         elif illumination_mode=="both":
             gs = GridSpec(4, 1, figure=self.fig_combined, height_ratios=[3.5, 3.5, 1.2, 1.2], hspace=0.25)
-            
-            self.ax_mai_front = self.fig_combined.add_subplot(gs[0])
+
+            self.ax_main_front = self.fig_combined.add_subplot(gs[0])
             self.ax_main_rear = self.fig_combined.add_subplot(gs[1])
-            self.ax_residuals = self.fig_combined.add_subplot(gs[2], sharex=self.ax_main)
+            self.ax_residuals = self.fig_combined.add_subplot(gs[2], sharex=self.ax_main_front)
             self.ax_collection = self.fig_combined.add_subplot(gs[3])
-            
-        # Canvas
-        self.canvas_combined = FigureCanvasTkAgg(self.fig_combined, master=self.frame_right)
-        self.canvas_combined.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        
-        self.build_param_inputs()
         
 
 
@@ -481,19 +490,29 @@ class IQEFitApp:
 
 
     def plot_current_params(self,illumination_mode):
-        if not self.eqe_file.get() or not self.rfl_file.get():
+        if illumination_mode == "front":
+            required = [self.eqe_file_front.get(), self.rfl_file_front.get()]
+        elif illumination_mode == "rear":
+            required = [self.eqe_file_rear.get(), self.rfl_file_rear.get()]
+        else:
+            required = [self.eqe_file_front.get(), self.rfl_file_front.get(), self.eqe_file_rear.get(), self.rfl_file_rear.get()]
+        if not all(required):
             return
     
         try:
-            if illumination_mode=="front" or illumination_mode=="rear":
+            if illumination_mode in ["front", "rear"]:
                 wavelength, EQE_meas, Reflectance = self.load_data_files(illumination_mode)
-            elif illumination_mode=="both":
-                wavelength, EQE_meas_front, EQE_meas_rear, Reflectance = self.load_data_files(illumination_mode)
+            else:
+                (wl_front, EQE_meas_front, R_front, wl_rear, EQE_meas_rear, R_rear) = self.load_data_files("both")
         except Exception as e:
             print("Erreur de chargement des fichiers :", e)
             return
-    
-        IQE_exp = EQE_meas / (1 - Reflectance)
+
+        if illumination_mode in ["front", "rear"]:
+            IQE_exp = EQE_meas / (1 - Reflectance)
+        else:
+            IQE_exp_front = EQE_meas_front / (1 - R_front)
+            IQE_exp_rear = EQE_meas_rear / (1 - R_rear)
     
         try:
             if illumination_mode=="front":
@@ -516,10 +535,18 @@ class IQEFitApp:
             return
         
         EgShift = float(self.entries["EgShift"].get())
-        wavelength_shifted = wavelength * EgShift
 
-        n_cigs, k_cigs = load_and_interpolate_nk_csv('CIGSu.csv', wavelength_shifted)
-        alpha_CIGS = compute_alpha(k_cigs, wavelength)
+        if illumination_mode in ["front", "rear"]:
+            wavelength_shifted = wavelength * EgShift
+            n_cigs, k_cigs = load_and_interpolate_nk_csv('CIGSu.csv', wavelength_shifted)
+            alpha_CIGS = compute_alpha(k_cigs, wavelength)
+        else:
+            wl_front_shift = wl_front * EgShift
+            wl_rear_shift = wl_rear * EgShift
+            n_cigs_f, k_cigs_f = load_and_interpolate_nk_csv('CIGSu.csv', wl_front_shift)
+            n_cigs_r, k_cigs_r = load_and_interpolate_nk_csv('CIGSu.csv', wl_rear_shift)
+            alpha_CIGS_front = compute_alpha(k_cigs_f, wl_front)
+            alpha_CIGS_rear = compute_alpha(k_cigs_r, wl_rear)
         
         if illumination_mode=="front":
             n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wavelength)
@@ -590,7 +617,8 @@ class IQEFitApp:
 
 
     
-        r_squared = 1 - np.sum((IQE_fit - IQE_exp)**2) / np.sum((IQE_exp - np.mean(IQE_exp))**2)
+        if illumination_mode != "both":
+            r_squared = 1 - np.sum((IQE_fit - IQE_exp)**2) / np.sum((IQE_exp - np.mean(IQE_exp))**2)
     
         # Clear and reuse axes
         self.ax_main.clear()
@@ -598,11 +626,23 @@ class IQEFitApp:
         # --- Stackplot order: Reflected, Uncollected, Collected, Transmitted ---
         self.ax_main.clear()
         
-        if self.enable_metal_reflection.get() and self.metal_file.get():      
+        if illumination_mode == "both":
+            self.ax_main_front.clear()
+            self.ax_main_rear.clear()
+            self.ax_main_front.plot(wl_front, IQE_exp_front, 'ko', label='Exp. front')
+            self.ax_main_front.plot(wl_front, IQE_fit_front, 'r-', label='Fit front')
+            self.ax_main_rear.plot(wl_rear, IQE_exp_rear, 'ko', label='Exp. rear')
+            self.ax_main_rear.plot(wl_rear, IQE_fit_rear, 'r-', label='Fit rear')
+            self.ax_main_front.set_ylabel('IQE')
+            self.ax_main_rear.set_ylabel('IQE')
+            self.ax_main_rear.set_xlabel('Wavelength (nm)')
+            self.ax_main_front.legend(loc='best')
+            self.ax_main_rear.legend(loc='best')
+        elif self.enable_metal_reflection.get() and self.metal_file.get():
             self.ax_main.stackplot(
                 wavelength,
-                IQE_fit,                                             # Collected
-                Topt*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7))  - IQE_fit,  # Absorbed but lost
+                IQE_fit,
+                Topt*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7))  - IQE_fit,
                 comeback_reflection*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)),
                 comeback_reflection * np.exp(-alpha_CIGS*dCIGS*1e-7),
                 metal_absorbed,
@@ -616,7 +656,6 @@ class IQEFitApp:
                 IQE_fit,                                             # Collected
                 Topt*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)) - IQE_fit,  # Absorbed but lost
                 Topt*(np.exp(-alpha_CIGS * dCIGS * 1e-7)),                 # Transmitted
-                1-Topt,
                 labels=["Collected", "Absorbed", "Transmitted","SLG/ITO"],
                 colors=["#eff821", "#ffdd36", "#00cbcc", "#c0ffee"]
             )
@@ -636,48 +675,57 @@ class IQEFitApp:
 
 
 
-        self.ax_main.plot(wavelength, IQE_fit, 'r-', linewidth=2, label='Fit (line)')
-        self.ax_main.plot(wavelength, IQE_exp, 'ko', markerfacecolor='none', markersize=8, markeredgewidth=1.2, label='Exp. IQE')
-        self.ax_main.plot(wavelength, drift_comp, 'g--', label='SCR contribution')
-        self.ax_main.plot(wavelength, diff_comp, 'b--', label='Ln contribution')
-        if self.enable_metal_reflection.get() and self.metal_file.get():
-            self.ax_main.plot(wavelength, IQE_refl, 'k--', label='Metal reflection')
-        self.ax_main.set_xlabel('Wavelength (nm)')
-        self.ax_main.set_ylabel('Quantum efficiency')
-        self.ax_main.set_xlim(310, 830)
-        self.ax_main.set_xticks(np.arange(320, 840, 40))
-        self.ax_main.set_ylim(0, 1)
-        self.ax_main.grid(True)
-        self.ax_main.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=9)
+        if illumination_mode != "both":
+            self.ax_main.plot(wavelength, IQE_fit, 'r-', linewidth=2, label='Fit (line)')
+            self.ax_main.plot(wavelength, IQE_exp, 'ko', markerfacecolor='none', markersize=8, markeredgewidth=1.2, label='Exp. IQE')
+            self.ax_main.plot(wavelength, drift_comp, 'g--', label='SCR contribution')
+            self.ax_main.plot(wavelength, diff_comp, 'b--', label='Ln contribution')
+            if self.enable_metal_reflection.get() and self.metal_file.get():
+                self.ax_main.plot(wavelength, IQE_refl, 'k--', label='Metal reflection')
+            self.ax_main.set_xlabel('Wavelength (nm)')
+            self.ax_main.set_ylabel('Quantum efficiency')
+            self.ax_main.set_xlim(310, 830)
+            self.ax_main.set_xticks(np.arange(320, 840, 40))
+            self.ax_main.set_ylim(0, 1)
+            self.ax_main.grid(True)
+            self.ax_main.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=9)
     
         # Residuals
-        residuals = IQE_fit - IQE_exp
-        self.ax_residuals.plot(wavelength, residuals, 'k-', linewidth=0.8)
-        self.ax_residuals.axhline(0, color='gray', linestyle='--', linewidth=0.5)
-        self.ax_residuals.set_ylabel('Residual (Fit - Exp)')
-        self.ax_residuals.set_xlabel('Wavelength (nm)')
-        self.ax_residuals.set_xlim(310, 830)
-        self.ax_residuals.set_xticks(np.arange(320, 840, 40))
-        self.ax_residuals.grid(True)
+        if illumination_mode != "both":
+            residuals = IQE_fit - IQE_exp
+            self.ax_residuals.plot(wavelength, residuals, 'k-', linewidth=0.8)
+            self.ax_residuals.axhline(0, color='gray', linestyle='--', linewidth=0.5)
+            self.ax_residuals.set_ylabel('Residual (Fit - Exp)')
+            self.ax_residuals.set_xlabel('Wavelength (nm)')
+            self.ax_residuals.set_xlim(310, 830)
+            self.ax_residuals.set_xticks(np.arange(320, 840, 40))
+            self.ax_residuals.grid(True)
         
-        self.ax_collection.clear()
-        self.ax_collection.plot(depths, collection, 'r-')
-        self.ax_collection.axvline(dSCR, color='blue', linestyle='--', linewidth=1, label=f"SCR={dSCR}")
-        self.ax_collection.axvline(x_Ln, color='purple', linestyle='--', linewidth=1, label=f"Ln={Ln}")
-        self.ax_collection.axvline(x_coll_end, color='green', linestyle='--', linewidth=1, label=f"Dead zone={dDEAD}")
-        
-        self.ax_collection.set_xlim(0, dCIGS)
-        self.ax_collection.set_ylim(0, 1.05)
-        self.ax_collection.set_xlabel('Depth in CIGS (nm)')
-        self.ax_collection.set_ylabel('Collection efficiency')
-        self.ax_collection.grid(True)
-        self.ax_collection.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=9)
+
+        if illumination_mode != "both":
+            self.ax_collection.clear()
+            self.ax_collection.plot(depths, collection, 'r-')
+            self.ax_collection.axvline(dSCR, color='blue', linestyle='--', linewidth=1, label=f"SCR={dSCR}")
+            self.ax_collection.axvline(x_Ln, color='purple', linestyle='--', linewidth=1, label=f"Ln={Ln}")
+            self.ax_collection.axvline(x_coll_end, color='green', linestyle='--', linewidth=1, label=f"Dead zone={dDEAD}")
+
+            self.ax_collection.set_xlim(0, dCIGS)
+            self.ax_collection.set_ylim(0, 1.05)
+            self.ax_collection.set_xlabel('Depth in CIGS (nm)')
+            self.ax_collection.set_ylabel('Collection efficiency')
+            self.ax_collection.grid(True)
+            self.ax_collection.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=9)
 
     
         # Final rendering
-        self.fig_combined.subplots_adjust(right=0.80)  # ← widen right margin for legend
+        self.fig_combined.subplots_adjust(right=0.80)
         self.canvas_combined.draw()
-        self.r2_label.config(text=f"R² = {r_squared:.4f}")
+        if illumination_mode == "both":
+            r_front = 1 - np.sum((IQE_fit_front - IQE_exp_front) ** 2) / np.sum((IQE_exp_front - np.mean(IQE_exp_front)) ** 2)
+            r_rear = 1 - np.sum((IQE_fit_rear - IQE_exp_rear) ** 2) / np.sum((IQE_exp_rear - np.mean(IQE_exp_rear)) ** 2)
+            self.r2_label.config(text=f"R² front={r_front:.4f} rear={r_rear:.4f}")
+        else:
+            self.r2_label.config(text=f"R² = {r_squared:.4f}")
         
         
     def save_all_results(self,illumination_mode):
@@ -833,16 +881,30 @@ class IQEFitApp:
 
     def run_fit(self, illumination_mode):
         
-        if illumination_mode=="front":
-            parameters_list=["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "AZO", "ZnO", "CdS"]
-        elif illumination_mode=="rear":
-            parameters_list=["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb"]
-            
-        
-        if not self.eqe_file.get() or not self.rfl_file.get():
+        if illumination_mode == "front":
+            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "AZO", "ZnO", "CdS"]
+            required = [self.eqe_file_front.get(), self.rfl_file_front.get()]
+            wl, EQE_meas, Reflectance = self.load_data_files("front")
+            IQE_exp = EQE_meas / (1 - Reflectance)
+        elif illumination_mode == "rear":
+            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb"]
+            required = [self.eqe_file_rear.get(), self.rfl_file_rear.get()]
+            wl, EQE_meas, Reflectance = self.load_data_files("rear")
+            IQE_exp = EQE_meas / (1 - Reflectance)
+        else:
+            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "AZO", "ZnO", "CdS"]
+            required = [self.eqe_file_front.get(), self.rfl_file_front.get(), self.eqe_file_rear.get(), self.rfl_file_rear.get()]
+            (wl_front, EQE_front, R_front, wl_rear, EQE_rear, R_rear) = self.load_data_files("both")
+            IQE_exp_front = EQE_front / (1 - R_front)
+            IQE_exp_rear = EQE_rear / (1 - R_rear)
+
+        if not all(required):
             return
-        wavelength, EQE_meas, Reflectance = self.load_data_files()
-        IQE_exp = EQE_meas / (1 - Reflectance)
+
+        if illumination_mode in ["front", "rear"]:
+            wavelength = wl
+        else:
+            wavelength = wl_front  # used for initial nk interpolation
         
         n_cigs, k_cigs = load_and_interpolate_nk_csv('CIGSu.csv', wavelength)
 
@@ -874,52 +936,59 @@ class IQEFitApp:
                         p[param] = x[idx]
                         idx += 1
                         
-                wavelength_shifted = wavelength * p["EgShift"]
-                n_cigs, k_cigs = load_and_interpolate_nk_csv('CIGSu.csv', wavelength_shifted)
-                alpha_CIGS = compute_alpha(k_cigs, wavelength)
+                if illumination_mode in ["front", "rear"]:
+                    wl_use = wl if illumination_mode in ["front", "rear"] else wl_front
+                    wl_shifted = wl_use * p["EgShift"]
+                    n_cigs, k_cigs = load_and_interpolate_nk_csv('CIGSu.csv', wl_shifted)
+                    alpha_CIGS = compute_alpha(k_cigs, wl_use)
+                else:
+                    wl_shifted_f = wl_front * p["EgShift"]
+                    wl_shifted_r = wl_rear * p["EgShift"]
+                    n_cigs_f, k_cigs_f = load_and_interpolate_nk_csv('CIGSu.csv', wl_shifted_f)
+                    n_cigs_r, k_cigs_r = load_and_interpolate_nk_csv('CIGSu.csv', wl_shifted_r)
+                    alpha_CIGS_front = compute_alpha(k_cigs_f, wl_front)
+                    alpha_CIGS_rear = compute_alpha(k_cigs_r, wl_rear)
         
-                if illumination_mode=="front":
-                    n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wavelength)
-                    n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wavelength)
-                    n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wavelength)
+
+                if illumination_mode == "front":
+                    n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wl)
+                    n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wl)
+                    n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wl)
                     nk_data = [(n_azo, k_azo), (n_zno, k_zno), (n_cds, k_cds)]
-                    
-                    Topt, parasitic_abs = compute_Topt(wavelength, nk_data, [p["AZO"], p["ZnO"], p["CdS"]])
-                    
-                    IQE_fit, drift_comp, diff_comp = compute_IQE_components_front(
-                        wavelength, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+
+                    Topt, _ = compute_Topt(wl, nk_data, [p["AZO"], p["ZnO"], p["CdS"]])
+
+                    IQE_fit, _, _ = compute_IQE_components_front(
+                        wl, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
                     return np.sum((IQE_fit - IQE_exp) ** 2) / np.sum((IQE_exp - np.mean(IQE_exp)) ** 2)
-                
-                elif illumination_mode=="rear":
-                    # Utiliser directement les données expérimentales de transmission
-                    Topt = load_Topt_from_file('Topt_from_ITO.csv', wavelength)
-                    
-                    IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
-                        wavelength, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+
+                elif illumination_mode == "rear":
+                    Topt = load_Topt_from_file('Topt_from_ITO.csv', wl)
+                    IQE_fit, _, _ = compute_IQE_components_rear(
+                        wl, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
                     return np.sum((IQE_fit - IQE_exp) ** 2) / np.sum((IQE_exp - np.mean(IQE_exp)) ** 2)
-                
-                elif illumination_mode=="both":
-                    n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wavelength)
-                    n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wavelength)
-                    n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wavelength)
+
+                else:
+                    n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wl_front)
+                    n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wl_front)
+                    n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wl_front)
                     nk_data = [(n_azo, k_azo), (n_zno, k_zno), (n_cds, k_cds)]
-                    
-                    Topt_front, parasitic_abs = compute_Topt(wavelength, nk_data, [p["AZO"], p["ZnO"], p["CdS"]])
-                    
-                    IQE_fit_front, drift_comp, diff_comp = compute_IQE_components_front(
-                        wavelength, alpha_CIGS, Topt_front, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+
+                    Topt_front, _ = compute_Topt(wl_front, nk_data, [p["AZO"], p["ZnO"], p["CdS"]])
+                    IQE_fit_front, _, _ = compute_IQE_components_front(
+                        wl_front, alpha_CIGS_front, Topt_front, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
-                    
-                    # Utiliser directement les données expérimentales de transmission
-                    Topt_rear = load_Topt_from_file('Topt_from_ITO.csv', wavelength)
-                    
-                    IQE_fit_rear, drift_comp, diff_comp = compute_IQE_components_rear(
-                        wavelength, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+
+                    Topt_rear = load_Topt_from_file('Topt_from_ITO.csv', wl_rear)
+                    IQE_fit_rear, _, _ = compute_IQE_components_rear(
+                        wl_rear, alpha_CIGS_rear, Topt_rear, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
-                    return np.sum((IQE_fit_front - IQE_exp_front) ** 2) / np.sum((IQE_exp_front - np.mean(IQE_exp_front)) ** 2) + np.sum((IQE_fit_rear - IQE_exp_rear) ** 2) / np.sum((IQE_exp_rear - np.mean(IQE_exp_rear)) ** 2)
-                
+
+                    err_front = np.sum((IQE_fit_front - IQE_exp_front) ** 2) / np.sum((IQE_exp_front - np.mean(IQE_exp_front)) ** 2)
+                    err_rear = np.sum((IQE_fit_rear - IQE_exp_rear) ** 2) / np.sum((IQE_exp_rear - np.mean(IQE_exp_rear)) ** 2)
+                    return err_front + err_rear
             
             
             
