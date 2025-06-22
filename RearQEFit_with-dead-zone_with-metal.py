@@ -674,14 +674,32 @@ class IQEFitApp:
             n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wl_front)
             nk_data = [(n_azo, k_azo), (n_zno, k_zno), (n_cds, k_cds)]
 
-            Topt_front, _ = compute_Topt(wl_front, nk_data, [final_params["AZO"], final_params["ZnO"], final_params["CdS"]])
+            Topt_front, parasitic_abs_front = compute_Topt(
+                wl_front,
+                nk_data,
+                [final_params["AZO"], final_params["ZnO"], final_params["CdS"]],
+            )
             Topt_rear = load_Topt_from_file('Topt_from_ITO.csv', wl_rear)
 
-            IQE_fit_front, _, _ = compute_IQE_components_front(
-                wl_front, alpha_CIGS_front, Topt_front, final_params["dSCR"], final_params["Ln"], final_params["CIGS"], final_params["dDEAD"], final_params["Recomb"]
+            IQE_fit_front, drift_comp_front, diff_comp_front = compute_IQE_components_front(
+                wl_front,
+                alpha_CIGS_front,
+                Topt_front,
+                final_params["dSCR"],
+                final_params["Ln"],
+                final_params["CIGS"],
+                final_params["dDEAD"],
+                final_params["Recomb"],
             )
-            IQE_fit_rear, _, _ = compute_IQE_components_rear(
-                wl_rear, alpha_CIGS_rear, Topt_rear, final_params["dSCR"], final_params["Ln"], final_params["CIGS"], final_params["dDEAD"], final_params["Recomb"]
+            IQE_fit_rear, drift_comp_rear, diff_comp_rear = compute_IQE_components_rear(
+                wl_rear,
+                alpha_CIGS_rear,
+                Topt_rear,
+                final_params["dSCR"],
+                final_params["Ln"],
+                final_params["CIGS"],
+                final_params["dDEAD"],
+                final_params["Recomb"],
             )
 
 
@@ -743,23 +761,69 @@ class IQEFitApp:
         if illumination_mode == "both":
             self.ax_main_front.clear()
             self.ax_main_rear.clear()
-            self.ax_main_front.plot(wl_front, IQE_exp_front, 'ko', label='Exp. front')
-            self.ax_main_front.plot(wl_front, IQE_fit_front, 'r-', label='Fit front')
-            self.ax_main_rear.plot(wl_rear, IQE_exp_rear, 'ko', label='Exp. rear')
-            self.ax_main_rear.plot(wl_rear, IQE_fit_rear, 'r-', label='Fit rear')
-            self.ax_main_front.set_ylabel('IQE')
-            self.ax_main_rear.set_ylabel('IQE')
-            self.ax_main_rear.set_xlabel('Wavelength (nm)')
-            self.ax_main_front.legend(loc='best')
-            self.ax_main_rear.legend(loc='best')
+
+            self.ax_main_front.stackplot(
+                wl_front,
+                IQE_fit_front,
+                Topt_front * (1 - np.exp(-alpha_CIGS_front * dCIGS * 1e-7)) - IQE_fit_front,
+                parasitic_abs_front[0] * parasitic_abs_front[1] * (1 - parasitic_abs_front[2]),
+                parasitic_abs_front[0] * (1 - parasitic_abs_front[1]),
+                1 - parasitic_abs_front[0],
+                parasitic_abs_front[0]
+                * parasitic_abs_front[1]
+                * parasitic_abs_front[2]
+                * np.exp(-alpha_CIGS_front * dCIGS * 1e-7),
+                labels=["Collected", "Absorbed", "CdS", "ZnO", "AZO", "Transmitted"],
+                colors=["#eff821", "#ffdd36", "#6fb802", "#9e0b0b", "#ff6600", "#00cbcc"],
+            )
+            self.ax_main_front.plot(wl_front, IQE_fit_front, "r-", linewidth=2, label="Fit (line)")
+            self.ax_main_front.plot(
+                wl_front,
+                IQE_exp_front,
+                "ko",
+                markerfacecolor="none",
+                markersize=8,
+                markeredgewidth=1.2,
+                label="Exp. IQE",
+            )
+            self.ax_main_front.plot(wl_front, drift_comp_front, "g--", label="SCR contribution")
+            self.ax_main_front.plot(wl_front, diff_comp_front, "b--", label="Ln contribution")
+            self.ax_main_front.set_ylabel("Quantum efficiency")
             self.ax_main_front.set_xlim(310, 830)
             self.ax_main_front.set_xticks(np.arange(320, 840, 40))
             self.ax_main_front.set_ylim(0, 1)
             self.ax_main_front.grid(True)
+            self.ax_main_front.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
+
+            self.ax_main_rear.stackplot(
+                wl_rear,
+                IQE_fit_rear,
+                Topt_rear * (1 - np.exp(-alpha_CIGS_rear * dCIGS * 1e-7)) - IQE_fit_rear,
+                Topt_rear * np.exp(-alpha_CIGS_rear * dCIGS * 1e-7),
+                1-Topt_rear,
+                labels=["Collected", "Absorbed", "Transmitted", "SLG/ITO"],
+                colors=["#eff821", "#ffdd36", "#00cbcc", "#c0ffee"],
+            )
+            self.ax_main_rear.plot(wl_rear, IQE_fit_rear, "r-", linewidth=2, label="Fit (line)")
+            self.ax_main_rear.plot(
+                wl_rear,
+                IQE_exp_rear,
+                "ko",
+                markerfacecolor="none",
+                markersize=8,
+                markeredgewidth=1.2,
+                label="Exp. IQE",
+            )
+            self.ax_main_rear.plot(wl_rear, drift_comp_rear, "g--", label="SCR contribution")
+            self.ax_main_rear.plot(wl_rear, diff_comp_rear, "b--", label="Ln contribution")
+            self.ax_main_rear.set_ylabel("Quantum efficiency")
+            self.ax_main_rear.set_xlabel("Wavelength (nm)")
             self.ax_main_rear.set_xlim(310, 830)
             self.ax_main_rear.set_xticks(np.arange(320, 840, 40))
             self.ax_main_rear.set_ylim(0, 1)
             self.ax_main_rear.grid(True)
+            self.ax_main_rear.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
+            
         elif self.enable_metal_reflection.get() and self.metal_file.get():
             self.ax_main.stackplot(
                 wavelength,
@@ -772,12 +836,14 @@ class IQEFitApp:
                 labels=["Collected", "Absorbed","Absorbed thanks to metal", "Re-Transmitted", "Absorbed (Metal)", "SLG/ITO"],
                 colors=["#eff821", "#ffdd36", "#ff6600", "#00cbcc", "#c0c0c0", "#c0ffee"]
             )
+            
         elif illumination_mode=="rear":
             self.ax_main.stackplot(
                 wavelength,
                 IQE_fit,                                             # Collected
                 Topt*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)) - IQE_fit,  # Absorbed but lost
                 Topt*(np.exp(-alpha_CIGS * dCIGS * 1e-7)),                 # Transmitted
+                1-Topt,
                 labels=["Collected", "Absorbed", "Transmitted","SLG/ITO"],
                 colors=["#eff821", "#ffdd36", "#00cbcc", "#c0ffee"]
             )
@@ -798,45 +864,66 @@ class IQEFitApp:
 
 
         if illumination_mode != "both":
-            self.ax_main.plot(wavelength, IQE_fit, 'r-', linewidth=2, label='Fit (line)')
-            self.ax_main.plot(wavelength, IQE_exp, 'ko', markerfacecolor='none', markersize=8, markeredgewidth=1.2, label='Exp. IQE')
-            self.ax_main.plot(wavelength, drift_comp, 'g--', label='SCR contribution')
-            self.ax_main.plot(wavelength, diff_comp, 'b--', label='Ln contribution')
+            self.ax_main.plot(wavelength, IQE_fit, "r-", linewidth=2, label="Fit (line)")
+            self.ax_main.plot(
+                wavelength,
+                IQE_exp,
+                "ko",
+                markerfacecolor="none",
+                markersize=8,
+                markeredgewidth=1.2,
+                label="Exp. IQE",
+            )
+            self.ax_main.plot(wavelength, drift_comp, "g--", label="SCR contribution")
+            self.ax_main.plot(wavelength, diff_comp, "b--", label="Ln contribution")
             if self.enable_metal_reflection.get() and self.metal_file.get():
-                self.ax_main.plot(wavelength, IQE_refl, 'k--', label='Metal reflection')
-            self.ax_main.set_xlabel('Wavelength (nm)')
-            self.ax_main.set_ylabel('Quantum efficiency')
+                self.ax_main.plot(wavelength, IQE_refl, "k--", label="Metal reflection")
+            self.ax_main.set_xlabel("Wavelength (nm)")
+            self.ax_main.set_ylabel("Quantum efficiency")
             self.ax_main.set_xlim(310, 830)
             self.ax_main.set_xticks(np.arange(320, 840, 40))
             self.ax_main.set_ylim(0, 1)
             self.ax_main.grid(True)
-            self.ax_main.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=9)
+            self.ax_main.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
     
         # Residuals
         if illumination_mode != "both":
             residuals = IQE_fit - IQE_exp
-            self.ax_residuals.plot(wavelength, residuals, 'k-', linewidth=0.8)
-            self.ax_residuals.axhline(0, color='gray', linestyle='--', linewidth=0.5)
-            self.ax_residuals.set_ylabel('Residual (Fit - Exp)')
-            self.ax_residuals.set_xlabel('Wavelength (nm)')
+            self.ax_residuals.plot(wavelength, residuals, "k-", linewidth=0.8)
+            self.ax_residuals.axhline(0, color="gray", linestyle="--", linewidth=0.5)
+            self.ax_residuals.set_ylabel("Residual (Fit - Exp)")
+            self.ax_residuals.set_xlabel("Wavelength (nm)")
             self.ax_residuals.set_xlim(310, 830)
             self.ax_residuals.set_xticks(np.arange(320, 840, 40))
             self.ax_residuals.grid(True)
+        else:
+            residuals_front = IQE_fit_front - IQE_exp_front
+            residuals_rear = IQE_fit_rear - IQE_exp_rear
+            self.ax_residuals.plot(wl_front, residuals_front, "r-", linewidth=0.8, label="Front")
+            self.ax_residuals.plot(wl_rear, residuals_rear, "b-", linewidth=0.8, label="Rear")
+            self.ax_residuals.axhline(0, color="gray", linestyle="--", linewidth=0.5)
+            self.ax_residuals.set_ylabel("Residual (Fit - Exp)")
+            self.ax_residuals.set_xlabel("Wavelength (nm)")
+            self.ax_residuals.set_xlim(310, 830)
+            self.ax_residuals.set_xticks(np.arange(320, 840, 40))
+            self.ax_residuals.grid(True)
+            self.ax_residuals.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
         
 
-        if illumination_mode != "both":
-            self.ax_collection.clear()
-            self.ax_collection.plot(depths, collection, 'r-')
-            self.ax_collection.axvline(dSCR, color='blue', linestyle='--', linewidth=1, label=f"SCR={dSCR}")
-            self.ax_collection.axvline(x_Ln, color='purple', linestyle='--', linewidth=1, label=f"Ln={Ln}")
-            self.ax_collection.axvline(x_coll_end, color='green', linestyle='--', linewidth=1, label=f"Dead zone={dDEAD}")
 
-            self.ax_collection.set_xlim(0, dCIGS)
-            self.ax_collection.set_ylim(0, 1.05)
-            self.ax_collection.set_xlabel('Depth in CIGS (nm)')
-            self.ax_collection.set_ylabel('Collection efficiency')
-            self.ax_collection.grid(True)
-            self.ax_collection.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=9)
+
+        self.ax_collection.clear()
+        self.ax_collection.plot(depths, collection, 'r-')
+        self.ax_collection.axvline(dSCR, color='blue', linestyle='--', linewidth=1, label=f"SCR={dSCR}")
+        self.ax_collection.axvline(x_Ln, color='purple', linestyle='--', linewidth=1, label=f"Ln={Ln}")
+        self.ax_collection.axvline(x_coll_end, color='green', linestyle='--', linewidth=1, label=f"Dead zone={dDEAD}")
+
+        self.ax_collection.set_xlim(0, dCIGS)
+        self.ax_collection.set_ylim(0, 1.05)
+        self.ax_collection.set_xlabel('Depth in CIGS (nm)')
+        self.ax_collection.set_ylabel('Collection efficiency')
+        self.ax_collection.grid(True)
+        self.ax_collection.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=9)
 
     
         # Final rendering
