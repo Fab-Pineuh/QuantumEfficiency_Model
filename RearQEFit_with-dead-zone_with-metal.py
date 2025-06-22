@@ -181,13 +181,13 @@ class IQEFitApp:
         self.rfl_file_front = tk.StringVar()
         self.rfl_file_rear = tk.StringVar()
         self.create_widgets("front")
+        self.update_mode()
         self.stored_values = get_initial_params("front")
-        
+
         self.root.rowconfigure(1, weight=1)
         self.root.columnconfigure(1, weight=1)
-        
+
         self.frame_right.grid_propagate(True)
-        self.canvas_combined.get_tk_widget().pack(fill=tk.BOTH, expand=True)
             
     def update_entry(self, param, value):
         def update():
@@ -354,26 +354,27 @@ class IQEFitApp:
         
         self.illumination_mode = tk.StringVar(value="front")
         param_bounds = get_param_bounds(self.illumination_mode.get())
+        
         ttk.Radiobutton(
             illumination_select_frame,
             text="Front Illumination",
             variable=self.illumination_mode,
             value="front",
-            command=self.build_param_inputs
+            command=self.update_mode
         ).pack(anchor="w")
         ttk.Radiobutton(
             illumination_select_frame,
             text="Rear Illumination",
             variable=self.illumination_mode,
             value="rear",
-            command=self.build_param_inputs
+            command=self.update_mode
         ).pack(anchor="w")
         ttk.Radiobutton(
             illumination_select_frame,
             text="Both front and rear illumination",
             variable=self.illumination_mode,
             value="both",
-            command=self.build_param_inputs
+            command=self.update_mode
         ).pack(anchor="w")
 
         
@@ -457,21 +458,32 @@ class IQEFitApp:
         self.r2_label = ttk.Label(self.buttons_frame, text="R² = ?")
         self.r2_label.pack()
 
+    def update_mode(self):
+        mode = self.illumination_mode.get()
 
-        self.fig_combined = plt.Figure(figsize=(10, 10), dpi=100) 
-        if illumination_mode=="front" or illumination_mode=="rear":
+        if hasattr(self, "canvas_combined"):
+            self.canvas_combined.get_tk_widget().destroy()
+
+        if hasattr(self, "fig_combined"):
+            plt.close(self.fig_combined)
+
+        self.fig_combined = plt.Figure(figsize=(10, 10), dpi=100)
+        if mode in ("front", "rear"):
             gs = GridSpec(3, 1, figure=self.fig_combined, height_ratios=[3.5, 1.2, 1.2], hspace=0.25)
-            
             self.ax_main = self.fig_combined.add_subplot(gs[0])
             self.ax_residuals = self.fig_combined.add_subplot(gs[1], sharex=self.ax_main)
             self.ax_collection = self.fig_combined.add_subplot(gs[2])
-        elif illumination_mode=="both":
+        else:
             gs = GridSpec(4, 1, figure=self.fig_combined, height_ratios=[3.5, 3.5, 1.2, 1.2], hspace=0.25)
-
             self.ax_main_front = self.fig_combined.add_subplot(gs[0])
             self.ax_main_rear = self.fig_combined.add_subplot(gs[1])
             self.ax_residuals = self.fig_combined.add_subplot(gs[2], sharex=self.ax_main_front)
             self.ax_collection = self.fig_combined.add_subplot(gs[3])
+
+        self.canvas_combined = FigureCanvasTkAgg(self.fig_combined, master=self.frame_right)
+        self.canvas_combined.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        self.build_param_inputs()
         
 
 
