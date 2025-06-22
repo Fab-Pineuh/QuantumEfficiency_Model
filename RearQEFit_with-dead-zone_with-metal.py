@@ -39,6 +39,17 @@ PARAMS_BY_MODE = {
         "dSCR": (450, 0, 2000),
         "Ln": (50, 0.01, 2000),
         "dDEAD": (0, 0, 500),
+    },
+    "both": {
+        "EgShift": (1.0, 0.95, 1.05),
+        "Recomb": (1.0,0.8,1.0),
+        "AZO": (160, 140, 180),
+        "ZnO": (20, 10, 60),
+        "CdS": (38, 30, 45),
+        "CIGS": (500, 300, 2000),
+        "dSCR": (450, 0, 2000),
+        "Ln": (50, 0.01, 2000),
+        "dDEAD": (0, 0, 500),
     }
 }
 
@@ -164,9 +175,11 @@ class IQEFitApp:
     def __init__(self, root):
         self.root = root
         self.root.title("IQE Fit GUI")
-        self.eqe_file = tk.StringVar()
-        self.rfl_file = tk.StringVar()
-        self.create_widgets()
+        self.eqe_file_front = tk.StringVar()
+        self.eqe_file_rear = tk.StringVar()
+        self.rfl_file_front = tk.StringVar()
+        self.rfl_file_rear = tk.StringVar()
+        self.create_widgets("front")
         self.stored_values = get_initial_params("front")
         
         self.root.rowconfigure(1, weight=1)
@@ -182,22 +195,31 @@ class IQEFitApp:
         self.root.after(0, update)
 
 
-    def load_data_files(self):
-        eqe_df = pd.read_csv(self.eqe_file.get(), header=None)
+    def load_data_files(self, illumination_mode):
+        if illumination_mode=="front":
+            eqe_df = pd.read_csv(self.eqe_file_front.get(), header=None)
+            reflect_df = pd.read_csv(self.rfl_file_front.get(), header=None)
+        elif illumination_mode=="rear":
+            eqe_df = pd.read_csv(self.eqe_file_rear.get(), header=None)
+            reflect_df = pd.read_csv(self.rfl_file_rear.get(), header=None)
+        
         eqe_df.columns = ['wavelength', 'EQE']
-        reflect_df = pd.read_csv(self.rfl_file.get(), header=None)
         reflect_df.columns = ['wavelength', 'Reflectance']
         eqe_df = eqe_df[(eqe_df['wavelength'] >= 310) & (eqe_df['wavelength'] <= 830)]
         wl = eqe_df['wavelength'].values
         EQE = eqe_df['EQE'].values
         reflect_interp = interp1d(reflect_df['wavelength'], reflect_df['Reflectance'], bounds_error=False, fill_value="extrapolate")
         Reflectance = reflect_interp(wl)
+            
         return wl, EQE, Reflectance
 
-    def browse_eqe(self):
+    def browse_eqe(self,illumination_mode):
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
         if file:
-            self.eqe_file.set(file)
+            if illumination_mode=="front":
+                self.eqe_file_front.set(file)
+            elif illumination_mode=="rear":
+                self.eqe_file_rear.set(file)
             if self.rfl_file.get():
                 self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
 
@@ -274,30 +296,39 @@ class IQEFitApp:
 
 
 
-    def create_widgets(self):
+    def create_widgets(self, illumination_mode):
         self.entries = {}
         self.check_vars = {}
 
 
         frame_top = ttk.Frame(self.root)
         frame_top.grid(row=0, column=0, columnspan=2, pady=5)
-        ttk.Label(frame_top, text="EQE File:").grid(row=0, column=0)
-        ttk.Entry(frame_top, textvariable=self.eqe_file, width=50).grid(row=0, column=1)
+        
+        ttk.Label(frame_top, text="EQE File (FRONT):").grid(row=0, column=0)
+        ttk.Entry(frame_top, textvariable=self.eqe_file_front, width=50).grid(row=0, column=1)
         ttk.Button(frame_top, text="Browse", command=self.browse_eqe).grid(row=0, column=2)
 
-        ttk.Label(frame_top, text="Reflectance File:").grid(row=1, column=0)
-        ttk.Entry(frame_top, textvariable=self.rfl_file, width=50).grid(row=1, column=1)
+        ttk.Label(frame_top, text="Reflectance File (FRONT):").grid(row=1, column=0)
+        ttk.Entry(frame_top, textvariable=self.rfl_file_front, width=50).grid(row=1, column=1)
         ttk.Button(frame_top, text="Browse", command=self.browse_reflectance).grid(row=1, column=2)
+        
+        ttk.Label(frame_top, text="EQE File (REAR):").grid(row=2, column=0)
+        ttk.Entry(frame_top, textvariable=self.eqe_file_rear, width=50).grid(row=2, column=1)
+        ttk.Button(frame_top, text="Browse", command=self.browse_eqe).grid(row=2, column=2)
+
+        ttk.Label(frame_top, text="Reflectance File (REAR):").grid(row=3, column=0)
+        ttk.Entry(frame_top, textvariable=self.rfl_file_rear, width=50).grid(row=3, column=1)
+        ttk.Button(frame_top, text="Browse", command=self.browse_reflectance).grid(row=3, column=2)
         
         # Metal reflection checkbox and file input
         self.enable_metal_reflection = tk.BooleanVar(value=False)
         self.metal_file = tk.StringVar()
         
         metal_frame = ttk.Frame(frame_top)
-        metal_frame.grid(row=2, column=0, columnspan=3, sticky="w", pady=2)
+        metal_frame.grid(row=4, column=0, columnspan=3, sticky="w", pady=2)
         
         illumination_select_frame= ttk.Frame(frame_top)
-        illumination_select_frame.grid(row=0, rowspan=3, column=3, columnspan=3, sticky="w", pady=2)
+        illumination_select_frame.grid(row=0, rowspan=4, column=3, columnspan=3, sticky="w", pady=2)
         
         self.illumination_mode = tk.StringVar(value="front")
         param_bounds = get_param_bounds(self.illumination_mode.get())
@@ -313,6 +344,13 @@ class IQEFitApp:
             text="Rear Illumination",
             variable=self.illumination_mode,
             value="rear",
+            command=self.build_param_inputs
+        ).pack(anchor="w")
+        ttk.Radiobutton(
+            illumination_select_frame,
+            text="Both front and rear illumination",
+            variable=self.illumination_mode,
+            value="both",
             command=self.build_param_inputs
         ).pack(anchor="w")
 
@@ -399,12 +437,20 @@ class IQEFitApp:
 
 
         self.fig_combined = plt.Figure(figsize=(10, 10), dpi=100) 
-        gs = GridSpec(3, 1, figure=self.fig_combined, height_ratios=[3.5, 1.2, 1.2], hspace=0.25)
-        
-        self.ax_main = self.fig_combined.add_subplot(gs[0])
-        self.ax_residuals = self.fig_combined.add_subplot(gs[1], sharex=self.ax_main)
-        self.ax_collection = self.fig_combined.add_subplot(gs[2])
-        
+        if illumination_mode=="front" or illumination_mode=="rear":
+            gs = GridSpec(3, 1, figure=self.fig_combined, height_ratios=[3.5, 1.2, 1.2], hspace=0.25)
+            
+            self.ax_main = self.fig_combined.add_subplot(gs[0])
+            self.ax_residuals = self.fig_combined.add_subplot(gs[1], sharex=self.ax_main)
+            self.ax_collection = self.fig_combined.add_subplot(gs[2])
+        elif illumination_mode=="both":
+            gs = GridSpec(4, 1, figure=self.fig_combined, height_ratios=[3.5, 3.5, 1.2, 1.2], hspace=0.25)
+            
+            self.ax_mai_front = self.fig_combined.add_subplot(gs[0])
+            self.ax_main_rear = self.fig_combined.add_subplot(gs[1])
+            self.ax_residuals = self.fig_combined.add_subplot(gs[2], sharex=self.ax_main)
+            self.ax_collection = self.fig_combined.add_subplot(gs[3])
+            
         # Canvas
         self.canvas_combined = FigureCanvasTkAgg(self.fig_combined, master=self.frame_right)
         self.canvas_combined.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -439,7 +485,10 @@ class IQEFitApp:
             return
     
         try:
-            wavelength, EQE_meas, Reflectance = self.load_data_files()
+            if illumination_mode=="front" or illumination_mode=="rear":
+                wavelength, EQE_meas, Reflectance = self.load_data_files(illumination_mode)
+            elif illumination_mode=="both":
+                wavelength, EQE_meas_front, EQE_meas_rear, Reflectance = self.load_data_files(illumination_mode)
         except Exception as e:
             print("Erreur de chargement des fichiers :", e)
             return
@@ -640,7 +689,7 @@ class IQEFitApp:
     
         try:
             # === Prepare data ===
-            wavelength, EQE_meas, Reflectance = self.load_data_files()
+            wavelength, EQE_meas, Reflectance = self.load_data_files(illumination_mode)
             IQE_exp = EQE_meas / (1 - Reflectance)
             
             try:
@@ -796,20 +845,6 @@ class IQEFitApp:
         IQE_exp = EQE_meas / (1 - Reflectance)
         
         n_cigs, k_cigs = load_and_interpolate_nk_csv('CIGSu.csv', wavelength)
-        
-        def get_initial_values():
-            try:
-                dSCR0 = float(self.entries["dSCR"].get())
-                Ln0 = float(self.entries["Ln"].get())
-                self.entries["dSCR"].delete(0, tk.END)
-                self.entries["dSCR"].insert(0, str(dSCR0))
-                self.entries["Ln"].delete(0, tk.END)
-                self.entries["Ln"].insert(0, str(Ln0))
-                self._start_actual_fit(dSCR0, Ln0, illumination_mode)
-            except ValueError:
-                tk.messagebox.showerror("Input Error", "Invalid initial values.")
-        
-        self.root.after(0, get_initial_values)
 
         
         params = {param: float(self.entries[param].get()) for param in self.entries}
@@ -854,6 +889,8 @@ class IQEFitApp:
                     IQE_fit, drift_comp, diff_comp = compute_IQE_components_front(
                         wavelength, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
+                    return np.sum((IQE_fit - IQE_exp) ** 2) / np.sum((IQE_exp - np.mean(IQE_exp)) ** 2)
+                
                 elif illumination_mode=="rear":
                     # Utiliser directement les données expérimentales de transmission
                     Topt = load_Topt_from_file('Topt_from_ITO.csv', wavelength)
@@ -861,8 +898,27 @@ class IQEFitApp:
                     IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
                         wavelength, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
+                    return np.sum((IQE_fit - IQE_exp) ** 2) / np.sum((IQE_exp - np.mean(IQE_exp)) ** 2)
+                
+                elif illumination_mode=="both":
+                    n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wavelength)
+                    n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wavelength)
+                    n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wavelength)
+                    nk_data = [(n_azo, k_azo), (n_zno, k_zno), (n_cds, k_cds)]
                     
-                return np.sum((IQE_fit - IQE_exp) ** 2) / np.sum((IQE_exp - np.mean(IQE_exp)) ** 2)
+                    Topt_front, parasitic_abs = compute_Topt(wavelength, nk_data, [p["AZO"], p["ZnO"], p["CdS"]])
+                    
+                    IQE_fit_front, drift_comp, diff_comp = compute_IQE_components_front(
+                        wavelength, alpha_CIGS, Topt_front, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+                    )
+                    
+                    # Utiliser directement les données expérimentales de transmission
+                    Topt_rear = load_Topt_from_file('Topt_from_ITO.csv', wavelength)
+                    
+                    IQE_fit_rear, drift_comp, diff_comp = compute_IQE_components_rear(
+                        wavelength, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+                    )
+                    return np.sum((IQE_fit_front - IQE_exp_front) ** 2) / np.sum((IQE_exp_front - np.mean(IQE_exp_front)) ** 2) + np.sum((IQE_fit_rear - IQE_exp_rear) ** 2) / np.sum((IQE_exp_rear - np.mean(IQE_exp_rear)) ** 2)
                 
             
             
@@ -880,7 +936,7 @@ class IQEFitApp:
                 if not fixed_flags[i]:
                     if param in idx_map:
                         idx_map[param] = idx
-                    idx += 1
+                    idx += 1    
         
             dSCR = x[idx_map["dSCR"]] if idx_map["dSCR"] is not None else params["dSCR"]
             Ln = x[idx_map["Ln"]] if idx_map["Ln"] is not None else params["Ln"]
@@ -889,8 +945,10 @@ class IQEFitApp:
         
             return dCIGS - dSCR - Ln - dDEAD
 
-    
-        nonlinear_constraint = NonlinearConstraint(constraint_sum_thickness, 0, np.inf)
+        if all(self.check_vars[p].get() for p in ["dSCR", "Ln", "dDEAD", "CIGS"]):
+            nonlinear_constraint = []
+        else:
+            nonlinear_constraint = [NonlinearConstraint(constraint_sum_thickness, 0, np.inf)]
         
         for param in parameters_list:
             if not self.check_vars[param].get():
@@ -927,16 +985,16 @@ class IQEFitApp:
         initial_guess = []
         for i, param in enumerate(parameters_list):
             if not fixed_flags[i]:
+                print(param)
                 initial_guess.append(params[param])
         print("\n⚙️ Evaluating initial GUI parameters...")
         print("Initial guess:", initial_guess)
-        
         res_init = minimize(
             lambda x: model_objective(x, self.illumination_mode.get()),
             initial_guess,
             method="trust-constr",
             bounds=bounds,
-            constraints=[nonlinear_constraint],
+            constraints=nonlinear_constraint,
             options={"disp": False, "maxiter": 1}
         )
         
@@ -973,7 +1031,7 @@ class IQEFitApp:
         
                 # Create Sobol samples around current_mean
                 scaled_center = (current_mean - lower_bounds) / (upper_bounds - lower_bounds)
-                sampler = qmc.Sobol(d=len(means), scramble=True, seed=stage * 100 + n_samples)
+                sampler = qmc.Sobol(d=len(means), scramble=True, seed=42)
                 sobol_points = sampler.random(n=n_samples)
                 scaled_samples = scaled_center + (sobol_points - 0.5) * radius * 2
                 scaled_samples = np.clip(scaled_samples, 0, 1)
@@ -985,7 +1043,7 @@ class IQEFitApp:
                         x0_perturbed,
                         method="trust-constr",
                         bounds=bounds,
-                        constraints=[nonlinear_constraint],
+                        constraints=nonlinear_constraint,
                         options={
                             "verbose": 0,
                             "xtol": 1e-9,
@@ -994,7 +1052,6 @@ class IQEFitApp:
                             "maxiter": maxiter
                         }
                     )
-        
                     if res.success and res.fun < best_score:
                         best_result = res
                         best_score = res.fun
@@ -1006,10 +1063,7 @@ class IQEFitApp:
                         for i, param in enumerate(parameters_list):
                             if not fixed_flags[i]:
                                 self.update_entry(param, res.x[idx])
-                                if param == "EgShift":
-                                    self.update_entry(param, res.x[idx])
-                                else:
-                                    self.update_entry(param, res.x[idx])
+                                self.update_entry(param, res.x[idx])
                                 idx += 1
                         
                         # --- Plot updated fit ---
