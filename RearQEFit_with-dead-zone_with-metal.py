@@ -7,6 +7,7 @@ from scipy.interpolate import interp1d
 import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog
+from tkinter import messagebox
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
@@ -237,14 +238,9 @@ class IQEFitApp:
         if file:
             if mode == "front":
                 self.eqe_file_front.set(file)
-                if self.rfl_file_front.get():
-                    self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
             elif mode == "rear":
                 self.eqe_file_rear.set(file)
-                if self.rfl_file_rear.get():
-                    self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
-
-
+            self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
 
 
     def browse_reflectance(self, mode):
@@ -252,12 +248,9 @@ class IQEFitApp:
         if file:
             if mode == "front":
                 self.rfl_file_front.set(file)
-                if self.eqe_file_front.get():
-                    self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
             elif mode == "rear":
                 self.rfl_file_rear.set(file)
-                if self.eqe_file_rear.get():
-                    self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
+            self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
     
     def browse_metal_file(self):
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
@@ -579,16 +572,29 @@ class IQEFitApp:
         elif illumination_mode=="rear":
             # Utiliser directement les données expérimentales de transmission
             Topt = load_Topt_from_file('Topt_from_ITO.csv', wavelength)
-            
+
             IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
                 wavelength, alpha_CIGS, Topt, final_params["dSCR"], final_params["Ln"], final_params["CIGS"], final_params["dDEAD"], final_params["Recomb"]
             )
 
-        
+        else:
+            n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wl_front)
+            n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wl_front)
+            n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wl_front)
+            nk_data = [(n_azo, k_azo), (n_zno, k_zno), (n_cds, k_cds)]
+
+            Topt_front, _ = compute_Topt(wl_front, nk_data, [final_params["AZO"], final_params["ZnO"], final_params["CdS"]])
+            Topt_rear = load_Topt_from_file('Topt_from_ITO.csv', wl_rear)
+
+            IQE_fit_front, _, _ = compute_IQE_components_front(
+                wl_front, alpha_CIGS_front, Topt_front, final_params["dSCR"], final_params["Ln"], final_params["CIGS"], final_params["dDEAD"], final_params["Recomb"]
+            )
+            IQE_fit_rear, _, _ = compute_IQE_components_rear(
+                wl_rear, alpha_CIGS_rear, Topt_rear, final_params["dSCR"], final_params["Ln"], final_params["CIGS"], final_params["dDEAD"], final_params["Recomb"]
+            )
 
 
-        
-        if self.enable_metal_reflection.get() and self.metal_file.get():
+        if illumination_mode != "both" and self.enable_metal_reflection.get() and self.metal_file.get():
 
             metal_df = pd.read_csv(self.metal_file.get(), header=None)
             metal_interp = interp1d(metal_df.iloc[:, 0], metal_df.iloc[:, 1], bounds_error=False, fill_value="extrapolate")
