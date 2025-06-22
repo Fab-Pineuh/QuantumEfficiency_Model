@@ -234,37 +234,38 @@ class IQEFitApp:
 
 
     def browse_eqe(self, mode):
-        """Load an EQE CSV file for the chosen illumination mode."""
+        """Load an EQE CSV file and store it for the given illumination side."""
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
         if not file:
             return
 
-        var = self.eqe_file_front if mode == "front" else self.eqe_file_rear
-        var.set(file)
+        if mode == "front":
+            self.eqe_file_front.set(file)
+        else:
+            self.eqe_file_rear.set(file)
 
-        rfl_var = self.rfl_file_front if mode == "front" else self.rfl_file_rear
-        if rfl_var.get():
-            self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
+        self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
+
 
     def browse_reflectance(self, mode):
-        """Load a reflectance CSV file for the selected illumination mode."""
+        """Load a reflectance CSV file and store it for the given side."""
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
         if not file:
             return
 
-        var = self.rfl_file_front if mode == "front" else self.rfl_file_rear
-        var.set(file)
+        if mode == "front":
+            self.rfl_file_front.set(file)
+        else:
+            self.rfl_file_rear.set(file)
 
-        eqe_var = self.eqe_file_front if mode == "front" else self.eqe_file_rear
-        if eqe_var.get():
-            self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
+        self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
     
     def browse_metal_file(self):
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
         if file:
             self.metal_file.set(file)
             if self.metal_file.get():
-                self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
+                self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
     
     
     def build_param_inputs(self):
@@ -489,7 +490,7 @@ class IQEFitApp:
         self.button_revert = ttk.Button(self.buttons_frame, text="Revert fit", command=self.revert_fit)
         self.button_revert.pack(pady=5)
         
-        self.button_plot = ttk.Button(self.buttons_frame, text="Plot", command=lambda: self.root.after(0, self.plot_current_params(self.illumination_mode.get())))
+        self.button_plot = ttk.Button(self.buttons_frame, text="Plot", command=lambda: self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get())))
         self.button_plot.pack(pady=5)
         
         self.button_save = ttk.Button(self.buttons_frame, text="Save All", command=lambda: self.save_all_results(self.illumination_mode.get()))
@@ -1261,7 +1262,7 @@ class IQEFitApp:
                                 idx += 1
                         
                         # --- Plot updated fit ---
-                        self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
+                        self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
 
         
                         # ✅ Log best values
@@ -1314,7 +1315,7 @@ class IQEFitApp:
                 updated_values[param] = result.x[idx]
                 idx += 1
         
-        self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
+        self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
         self.root.after(0, lambda: self.update_after_fit(result, updated_values))
 
 
