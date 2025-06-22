@@ -502,6 +502,14 @@ class IQEFitApp:
     def update_mode(self):
         mode = self.illumination_mode.get()
 
+        # Define subplot height ratios depending on the selected mode
+        if mode in ("front", "rear"):
+            # Main plot should be larger than residuals and collection plots
+            height_ratios = [3, 1, 1]
+        else:
+            # Front and rear main plots with equal height
+            height_ratios = [3, 3, 1, 1]
+
         # Destroy any existing widgets/figure to avoid overlaps
         if hasattr(self, "canvas_combined"):
             self.canvas_combined.get_tk_widget().destroy()
