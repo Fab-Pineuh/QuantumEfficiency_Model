@@ -448,13 +448,11 @@ class IQEFitApp:
         scroll_canvas.bind("<Configure>", on_canvas_configure)
         
         # ---- Enable mousewheel scrolling over the parameter area ----
-        def _on_mousewheel(event):
-            scroll_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        self._on_mousewheel = _on_mousewheel
+        def _on_mousewheel(canvas, event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
         self.frame_left.bind(
-            "<Enter>", lambda e: scroll_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+            "<Enter>", lambda e: scroll_canvas.bind_all("<MouseWheel>", lambda ev: _on_mousewheel(scroll_canvas, ev))
         )
         self.frame_left.bind(
             "<Leave>", lambda e: scroll_canvas.unbind_all("<MouseWheel>")
@@ -465,10 +463,10 @@ class IQEFitApp:
                 widget = self.canvas_combined.get_tk_widget()
                 widget.bind(
                     "<Enter>",
-                    lambda e: scroll_canvas.bind_all("<MouseWheel>", self._on_mousewheel),
+                    lambda e: self.fig_canvas.bind_all("<MouseWheel>", lambda ev: _on_mousewheel(self.fig_canvas, ev)),
                 )
                 widget.bind(
-                    "<Leave>", lambda e: scroll_canvas.unbind_all("<MouseWheel>")
+                    "<Leave>", lambda e: self.fig_canvas.unbind_all("<MouseWheel>")
                 )
 
         self._bind_canvas_scroll = bind_canvas_scroll
