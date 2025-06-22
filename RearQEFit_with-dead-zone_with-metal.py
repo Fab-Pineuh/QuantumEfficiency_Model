@@ -197,7 +197,11 @@ class IQEFitApp:
 
     def load_data_files(self, illumination_mode):
         """Load EQE and reflectance data for the selected illumination mode."""
-        if illumination_mode == "front" or illumination_mode == "both":
+        if illumination_mode == "both":
+            front = self.load_data_files("front")
+            rear = self.load_data_files("rear")
+            return (*front, *rear)
+        if illumination_mode == "front":
             eqe_front = pd.read_csv(self.eqe_file_front.get(), header=None)
             rfl_front = pd.read_csv(self.rfl_file_front.get(), header=None)
 
@@ -208,7 +212,7 @@ class IQEFitApp:
             eqe_front_val = eqe_front["EQE"].values
             rfl_interp_f = interp1d(rfl_front["wavelength"], rfl_front["Reflectance"], bounds_error=False, fill_value="extrapolate")
             refl_front = rfl_interp_f(wl_front)
-        if illumination_mode == "rear" or illumination_mode == "both":
+        elif illumination_mode == "rear":
             eqe_rear = pd.read_csv(self.eqe_file_rear.get(), header=None)
             rfl_rear = pd.read_csv(self.rfl_file_rear.get(), header=None)
 
@@ -225,25 +229,35 @@ class IQEFitApp:
         elif illumination_mode == "rear":
             return wl_rear, eqe_rear_val, refl_rear
         else:
-            return wl_front, eqe_front_val, refl_front, wl_rear, eqe_rear_val, refl_rear
+            raise ValueError(f"Unknown illumination mode: {illumination_mode}")
 
-    def browse_eqe(self,illumination_mode):
+
+    def browse_eqe(self, mode):
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
         if file:
-            if illumination_mode=="front":
+            if mode == "front":
                 self.eqe_file_front.set(file)
-            elif illumination_mode=="rear":
+                if self.rfl_file_front.get():
+                    self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
+            elif mode == "rear":
                 self.eqe_file_rear.set(file)
-            if self.rfl_file.get():
-                self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
+                if self.rfl_file_rear.get():
+                    self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
 
 
-    def browse_reflectance(self):
+
+
+    def browse_reflectance(self, mode):
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
         if file:
-            self.rfl_file.set(file)
-            if self.eqe_file.get():
-                self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
+            if mode == "front":
+                self.rfl_file_front.set(file)
+                if self.eqe_file_front.get():
+                    self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
+            elif mode == "rear":
+                self.rfl_file_rear.set(file)
+                if self.eqe_file_rear.get():
+                    self.root.after(0, self.plot_current_params(self.illumination_mode.get()))
     
     def browse_metal_file(self):
         file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
@@ -321,19 +335,19 @@ class IQEFitApp:
         
         ttk.Label(frame_top, text="EQE File (FRONT):").grid(row=0, column=0)
         ttk.Entry(frame_top, textvariable=self.eqe_file_front, width=50).grid(row=0, column=1)
-        ttk.Button(frame_top, text="Browse", command=self.browse_eqe).grid(row=0, column=2)
+        ttk.Button(frame_top, text="Browse", command=lambda: self.browse_eqe("front")).grid(row=0, column=2)
 
         ttk.Label(frame_top, text="Reflectance File (FRONT):").grid(row=1, column=0)
         ttk.Entry(frame_top, textvariable=self.rfl_file_front, width=50).grid(row=1, column=1)
-        ttk.Button(frame_top, text="Browse", command=self.browse_reflectance).grid(row=1, column=2)
+        ttk.Button(frame_top, text="Browse", command=lambda: self.browse_reflectance("front")).grid(row=1, column=2)
         
         ttk.Label(frame_top, text="EQE File (REAR):").grid(row=2, column=0)
         ttk.Entry(frame_top, textvariable=self.eqe_file_rear, width=50).grid(row=2, column=1)
-        ttk.Button(frame_top, text="Browse", command=self.browse_eqe).grid(row=2, column=2)
+        ttk.Button(frame_top, text="Browse", command=lambda: self.browse_eqe("rear")).grid(row=2, column=2)
 
         ttk.Label(frame_top, text="Reflectance File (REAR):").grid(row=3, column=0)
         ttk.Entry(frame_top, textvariable=self.rfl_file_rear, width=50).grid(row=3, column=1)
-        ttk.Button(frame_top, text="Browse", command=self.browse_reflectance).grid(row=3, column=2)
+        ttk.Button(frame_top, text="Browse", command=lambda: self.browse_reflectance("rear")).grid(row=3, column=2)
         
         # Metal reflection checkbox and file input
         self.enable_metal_reflection = tk.BooleanVar(value=False)
@@ -503,7 +517,8 @@ class IQEFitApp:
             if illumination_mode in ["front", "rear"]:
                 wavelength, EQE_meas, Reflectance = self.load_data_files(illumination_mode)
             else:
-                (wl_front, EQE_meas_front, R_front, wl_rear, EQE_meas_rear, R_rear) = self.load_data_files("both")
+                wl_front, EQE_meas_front, R_front = self.load_data_files("front")
+                wl_rear, EQE_meas_rear, R_rear = self.load_data_files("rear")
         except Exception as e:
             print("Erreur de chargement des fichiers :", e)
             return
@@ -513,12 +528,14 @@ class IQEFitApp:
         else:
             IQE_exp_front = EQE_meas_front / (1 - R_front)
             IQE_exp_rear = EQE_meas_rear / (1 - R_rear)
-    
+
         try:
             if illumination_mode=="front":
                 final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"] }
             elif illumination_mode=="rear":
                 final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb"] }
+            elif illumination_mode=="both":
+                final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"] }
             
         except ValueError:
             self.ax_main.clear()
@@ -534,7 +551,7 @@ class IQEFitApp:
             self.r2_label.config(text="R² = ?")
             return
         
-        EgShift = float(self.entries["EgShift"].get())
+        EgShift = final_params["EgShift"]
 
         if illumination_mode in ["front", "rear"]:
             wavelength_shifted = wavelength * EgShift
@@ -730,6 +747,13 @@ class IQEFitApp:
         
     def save_all_results(self,illumination_mode):
         import csv
+
+        if illumination_mode == "both":
+            messagebox.showinfo(
+                "Save Disabled",
+                "Saving results is not supported when illumination mode is 'both'.",
+            )
+            return
     
         file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
         if not file_path:
@@ -893,8 +917,14 @@ class IQEFitApp:
             IQE_exp = EQE_meas / (1 - Reflectance)
         else:
             parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "AZO", "ZnO", "CdS"]
-            required = [self.eqe_file_front.get(), self.rfl_file_front.get(), self.eqe_file_rear.get(), self.rfl_file_rear.get()]
-            (wl_front, EQE_front, R_front, wl_rear, EQE_rear, R_rear) = self.load_data_files("both")
+            required = [
+                self.eqe_file_front.get(),
+                self.rfl_file_front.get(),
+                self.eqe_file_rear.get(),
+                self.rfl_file_rear.get(),
+            ]
+            wl_front, EQE_front, R_front = self.load_data_files("front")
+            wl_rear, EQE_rear, R_rear = self.load_data_files("rear")
             IQE_exp_front = EQE_front / (1 - R_front)
             IQE_exp_rear = EQE_rear / (1 - R_rear)
 
