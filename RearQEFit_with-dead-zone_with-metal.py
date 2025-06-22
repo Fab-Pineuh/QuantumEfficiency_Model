@@ -395,6 +395,25 @@ class IQEFitApp:
         self.frame_right = ttk.Frame(self.root)
         self.frame_right.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
 
+        # --- Scrollable canvas for the matplotlib figure ---
+        self.fig_canvas = tk.Canvas(self.frame_right)
+        self.fig_canvas.pack(side="left", fill="both", expand=True)
+        self.fig_scrollbar = ttk.Scrollbar(self.frame_right, orient="vertical", command=self.fig_canvas.yview)
+        self.fig_scrollbar.pack(side="right", fill="y")
+        self.fig_canvas.configure(yscrollcommand=self.fig_scrollbar.set)
+
+        self.fig_frame = ttk.Frame(self.fig_canvas)
+        self.fig_window = self.fig_canvas.create_window((0, 0), window=self.fig_frame, anchor="nw")
+
+        def on_fig_frame_configure(event):
+            self.fig_canvas.configure(scrollregion=self.fig_canvas.bbox("all"))
+
+        def on_fig_canvas_configure(event):
+            self.fig_canvas.itemconfig(self.fig_window, width=event.width)
+
+        self.fig_frame.bind("<Configure>", on_fig_frame_configure)
+        self.fig_canvas.bind("<Configure>", on_fig_canvas_configure)
+
         
         # ---- Scrollable frame for parameters ----
         scrollable_container = ttk.Frame(left_panel)
@@ -467,7 +486,9 @@ class IQEFitApp:
         if hasattr(self, "fig_combined"):
             plt.close(self.fig_combined)
 
-        self.fig_combined = plt.Figure(figsize=(10, 10), dpi=100)
+        # Make the figure taller so it is easier to inspect
+        self.fig_combined = plt.Figure(figsize=(10, 12), dpi=100)
+        
         if mode in ("front", "rear"):
             gs = GridSpec(3, 1, figure=self.fig_combined, height_ratios=[3.5, 1.2, 1.2], hspace=0.25)
             self.ax_main = self.fig_combined.add_subplot(gs[0])
@@ -480,7 +501,8 @@ class IQEFitApp:
             self.ax_residuals = self.fig_combined.add_subplot(gs[2], sharex=self.ax_main_front)
             self.ax_collection = self.fig_combined.add_subplot(gs[3])
 
-        self.canvas_combined = FigureCanvasTkAgg(self.fig_combined, master=self.frame_right)
+        self.canvas_combined = FigureCanvasTkAgg(self.fig_combined, master=self.fig_frame)
+        self.canvas_combined.draw()
         self.canvas_combined.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         self.build_param_inputs()
@@ -673,6 +695,14 @@ class IQEFitApp:
             self.ax_main_rear.set_xlabel('Wavelength (nm)')
             self.ax_main_front.legend(loc='best')
             self.ax_main_rear.legend(loc='best')
+            self.ax_main_front.set_xlim(310, 830)
+            self.ax_main_front.set_xticks(np.arange(320, 840, 40))
+            self.ax_main_front.set_ylim(0, 1)
+            self.ax_main_front.grid(True)
+            self.ax_main_rear.set_xlim(310, 830)
+            self.ax_main_rear.set_xticks(np.arange(320, 840, 40))
+            self.ax_main_rear.set_ylim(0, 1)
+            self.ax_main_rear.grid(True)
         elif self.enable_metal_reflection.get() and self.metal_file.get():
             self.ax_main.stackplot(
                 wavelength,
