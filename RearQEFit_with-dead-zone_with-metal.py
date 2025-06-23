@@ -916,7 +916,8 @@ class IQEFitApp:
         self.ax_collection.plot(depths, collection, 'r-')
         self.ax_collection.axvline(dSCR, color='blue', linestyle='--', linewidth=1, label=f"SCR={dSCR}")
         self.ax_collection.axvline(x_Ln, color='purple', linestyle='--', linewidth=1, label=f"Ln={Ln}")
-        self.ax_collection.axvline(x_coll_end, color='green', linestyle='--', linewidth=1, label=f"Dead zone={dDEAD}")
+        if dDEAD != 0:
+            self.ax_collection.axvline(x_coll_end, color='green', linestyle='--', linewidth=1, label=f"Dead zone={dDEAD}")
 
         self.ax_collection.set_xlim(0, dCIGS)
         self.ax_collection.set_ylim(0, 1.05)
@@ -941,10 +942,9 @@ class IQEFitApp:
         import csv
 
         if illumination_mode == "both":
-            messagebox.showinfo(
-                "Save Disabled",
-                "Saving results is not supported when illumination mode is 'both'.",
-            )
+            # Save front and rear data separately using the same logic
+            self.save_all_results("front")
+            self.save_all_results("rear")
             return
     
         file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
