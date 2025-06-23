@@ -1082,6 +1082,9 @@ class IQEFitApp:
             # --- Save figures as PNG files ---
             folder = os.path.dirname(file_path)
             base = os.path.splitext(os.path.basename(file_path))[0]
+            # Ensure the canvas is freshly drawn so the renderer contains
+            # the latest artists; otherwise bounding boxes may be empty
+            self.canvas_combined.draw()
             renderer = self.canvas_combined.get_renderer()
             axes = [self.ax_main, self.ax_residuals, self.ax_collection]
             names = ["main", "residuals", "collection"]
