@@ -1082,20 +1082,10 @@ class IQEFitApp:
             # --- Save figures as PNG files ---
             folder = os.path.dirname(file_path)
             base = os.path.splitext(os.path.basename(file_path))[0]
-            # Ensure the canvas is freshly drawn so the renderer contains
-            # the latest artists; otherwise bounding boxes may be empty
             self.canvas_combined.draw()
-            renderer = self.canvas_combined.get_renderer()
-            axes = [self.ax_main, self.ax_residuals, self.ax_collection]
-            names = ["main", "residuals", "collection"]
-            for ax, name in zip(axes, names):
-                # Convert the tight bounding box to figure inches
-                bbox_pix = ax.get_tightbbox(renderer)
-                bbox = bbox_pix.transformed(ax.figure.dpi_scale_trans.inverted())
-                png_path = os.path.join(folder, f"{base}_{name}.png")
-                ax.figure.savefig(png_path, bbox_inches=bbox)
-            print("✅ Graphs saved as PNG")
-            
+            png_path = os.path.join(folder, f"{base}.png")
+            self.fig_combined.savefig(png_path, bbox_inches="tight")
+            print("✅ Figure saved as PNG")
         except Exception as e:
             print("❌ Save error:", e)
             traceback.print_exc()
