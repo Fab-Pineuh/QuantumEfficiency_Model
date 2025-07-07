@@ -275,6 +275,7 @@ class IQEFitApp:
     
         self.entries = {}
         self.check_vars = {}
+        self.stderr_labels = {}
     
         mode = self.illumination_mode.get()
         initials = get_initial_params(mode)
@@ -318,6 +319,9 @@ class IQEFitApp:
             self.entries[param] = main_entry
             self.entries[param + "_lb"] = lb_entry
             self.entries[param + "_ub"] = ub_entry
+
+            self.stderr_labels[param] = ttk.Label(group, text="± ?")
+            self.stderr_labels[param].pack(pady=2)
             
             fix_var = tk.BooleanVar(value=(param in default_fixed.get(mode, [])))
             fix_check = ttk.Checkbutton(group, text=f"Fix {param}", variable=fix_var)
@@ -484,6 +488,10 @@ class IQEFitApp:
         self.fast_fit_var = tk.BooleanVar(value=True)
         fast_fit_check = ttk.Checkbutton(self.buttons_frame, text="Fast Fit", variable=self.fast_fit_var)
         fast_fit_check.pack(pady=2)
+        
+        self.precise_fit_var = tk.BooleanVar(value=False)
+        precise_fit_check = ttk.Checkbutton(self.buttons_frame, text="Precise Fit", variable=self.precise_fit_var)
+        precise_fit_check.pack(pady=2)
         
         self.button_revert = ttk.Button(self.buttons_frame, text="Revert fit", command=self.revert_fit)
         self.button_revert.pack(pady=5)
@@ -1032,10 +1040,11 @@ class IQEFitApp:
                 writer.writerow(["Illumination Mode", illumination_mode])
                 writer.writerow([])
 
-                writer.writerow(["Parameter", "Lower Bound", "Value", "Upper Bound"])
+                writer.writerow(["Parameter", "Lower Bound", "Value", "StdDev", "Upper Bound"])
                 for p in params:
                     lb, ub = bounds[p]
-                    writer.writerow([p, lb, params[p], ub])
+                    std = getattr(self, "param_errors", {}).get(p, "")
+                    writer.writerow([p, lb, params[p], std, ub])
                 writer.writerow([])
     
                 # Main curves
@@ -1091,14 +1100,21 @@ class IQEFitApp:
             traceback.print_exc()
             
     
-    def update_after_fit(self, result, updated_values):
+    def update_after_fit(self, result, updated_values, errors=None):
         for param, value in updated_values.items():
             self.entries[param].delete(0, tk.END)
             if param == "EgShift":
                 self.entries[param].insert(0, f"{value:.6f}")
             else:
                 self.entries[param].insert(0, f"{value:.2f}")
-    
+            if errors and param in errors and param in self.stderr_labels:
+                self.stderr_labels[param].config(text=f"±{errors[param]:.2f}")
+
+        if errors:
+            for p in self.stderr_labels:
+                if p not in updated_values:
+                    self.stderr_labels[p].config(text="± ?")
+
         self.plot_current_params(self.illumination_mode.get())
 
     
@@ -1227,6 +1243,64 @@ class IQEFitApp:
                 print("Objective error:", e)
                 return np.inf
 
+        def model_residuals(x, illumination_mode):
+            try:
+                idx = 0
+                p = params.copy()
+                for i, param in enumerate(parameters_list):
+                    if not fixed_flags[i]:
+                        p[param] = x[idx]
+                        idx += 1
+
+                if illumination_mode in ["front", "rear"]:
+                    wl_use = wl if illumination_mode in ["front", "rear"] else wl_front
+                    wl_shifted = wl_use * p["EgShift"]
+                    n_cigs, k_cigs = load_and_interpolate_nk_csv('CIGSu.csv', wl_shifted)
+                    alpha_CIGS = compute_alpha(k_cigs, wl_use)
+                else:
+                    wl_shifted_f = wl_front * p["EgShift"]
+                    wl_shifted_r = wl_rear * p["EgShift"]
+                    n_cigs_f, k_cigs_f = load_and_interpolate_nk_csv('CIGSu.csv', wl_shifted_f)
+                    n_cigs_r, k_cigs_r = load_and_interpolate_nk_csv('CIGSu.csv', wl_shifted_r)
+                    alpha_CIGS_front = compute_alpha(k_cigs_f, wl_front)
+                    alpha_CIGS_rear = compute_alpha(k_cigs_r, wl_rear)
+
+                if illumination_mode == "front":
+                    n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wl)
+                    n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wl)
+                    n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wl)
+                    nk_data = [(n_azo, k_azo), (n_zno, k_zno), (n_cds, k_cds)]
+                    Topt, _ = compute_Topt(wl, nk_data, [p["AZO"], p["ZnO"], p["CdS"]])
+                    IQE_fit, _, _ = compute_IQE_components_front(
+                        wl, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+                    )
+                    return IQE_fit - IQE_exp
+
+                elif illumination_mode == "rear":
+                    Topt = load_Topt_from_file('Topt_from_ITO.csv', wl)
+                    IQE_fit, _, _ = compute_IQE_components_rear(
+                        wl, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+                    )
+                    return IQE_fit - IQE_exp
+
+                else:
+                    n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wl_front)
+                    n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wl_front)
+                    n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wl_front)
+                    nk_data = [(n_azo, k_azo), (n_zno, k_zno), (n_cds, k_cds)]
+                    Topt_front, _ = compute_Topt(wl_front, nk_data, [p["AZO"], p["ZnO"], p["CdS"]])
+                    IQE_fit_front, _, _ = compute_IQE_components_front(
+                        wl_front, alpha_CIGS_front, Topt_front, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+                    )
+                    Topt_rear = load_Topt_from_file('Topt_from_ITO.csv', wl_rear)
+                    IQE_fit_rear, _, _ = compute_IQE_components_rear(
+                        wl_rear, alpha_CIGS_rear, Topt_rear, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
+                    )
+                    return np.concatenate([IQE_fit_front - IQE_exp_front, IQE_fit_rear - IQE_exp_rear])
+
+            except Exception:
+                return np.ones_like(IQE_exp) * np.inf
+
         def constraint_sum_thickness(x):
             idx_map = {"dSCR": None, "Ln": None, "dDEAD": None, "CIGS": None}
             idx = 0
@@ -1307,7 +1381,10 @@ class IQEFitApp:
         no_improvement_counter = 0  # ← counts stages without any improvement
         
         # If Fast Fit is enabled, use a single stage and small sample set
-        if self.fast_fit_var.get():
+        if self.precise_fit_var.get() and self.fast_fit_var.get():
+            sample_sizes = [32]
+            max_stages = 1
+        elif self.fast_fit_var.get():
             sample_sizes = [16]   # One round only
             max_stages = 1
             print("⚡ Fast Fit mode enabled")
@@ -1318,7 +1395,11 @@ class IQEFitApp:
         
         stage = 0
         while stage < max_stages:
-            radius = refine_radius * (0.6 ** stage)
+            if self.precise_fit_var.get() and self.fast_fit_var.get():
+                refine_radius = 0.05
+                radius = refine_radius * (0.6 ** stage)
+            else:
+                radius = refine_radius * (0.6 ** stage)
             print(f"\n🔁 Stage {stage+1} (radius={radius:.4f})")
             
             stage_improved = False  # ← flag to track if any improvement in this stage
@@ -1399,7 +1480,6 @@ class IQEFitApp:
         
             stage += 1  # Go to next radius stage
         
-        # Finalize
         if best_result:
             result = best_result
             print("✅ Best fit selected.")
@@ -1416,9 +1496,33 @@ class IQEFitApp:
             if not fixed_flags[i]:
                 updated_values[param] = result.x[idx]
                 idx += 1
-        
+
+        # --- Estimate parameter uncertainties ---
+        def residuals_func(x):
+            return model_residuals(x, self.illumination_mode.get())
+
+        try:
+            from scipy.optimize._numdiff import approx_derivative
+
+            J = approx_derivative(residuals_func, result.x)
+            resid = residuals_func(result.x)
+            dof = max(len(resid) - len(result.x), 1)
+            sigma2 = np.sum(resid ** 2) / dof
+            cov = sigma2 * np.linalg.pinv(J.T @ J)
+            stds = np.sqrt(np.diag(cov))
+            errors = {}
+            idx = 0
+            for i, param in enumerate(parameters_list):
+                if not fixed_flags[i]:
+                    errors[param] = stds[idx]
+                    idx += 1
+            self.param_errors = errors
+        except Exception as e:
+            print("⚠️ Could not compute parameter uncertainties:", e)
+            self.param_errors = {}
+
         self.root.after(0, lambda: self.plot_current_params(self.illumination_mode.get()))
-        self.root.after(0, lambda: self.update_after_fit(result, updated_values))
+        self.root.after(0, lambda: self.update_after_fit(result, updated_values, self.param_errors))
 
 
 # --- Run app ---
