@@ -890,8 +890,7 @@ class IQEFitApp:
             self.ax_main.set_ylabel("Quantum efficiency")
             self.ax_main.set_xlim(310, 830)
             self.ax_main.set_xticks(np.arange(320, 840, 40))
-            # self.ax_main.set_ylim(0, 1)
-            self.ax_main.set_ylim(0.995, 1.005)
+            self.ax_main.set_ylim(0, 1)
             self.ax_main.grid(True)
             self.ax_main.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
     
@@ -1023,6 +1022,16 @@ class IQEFitApp:
                 IQE_fit_total = IQE_fit
     
             residual = IQE_fit_total - IQE_exp
+
+            if IQE_refl is not None:
+                absorbed_cigs = Topt * (1 - np.exp(-alpha_CIGS * params["CIGS"] * 1e-7)) - IQE_fit_total
+                absorbed_from_metal = comeback_reflection * (1 - np.exp(-alpha_CIGS * params["CIGS"] * 1e-7))
+                transmitted = comeback_reflection * np.exp(-alpha_CIGS * params["CIGS"] * 1e-7)
+                slg_ito = 1 - Topt
+            else:
+                absorbed_cigs = Topt * (1 - np.exp(-alpha_CIGS * params["CIGS"] * 1e-7)) - IQE_fit
+                transmitted = Topt * np.exp(-alpha_CIGS * params["CIGS"] * 1e-7)
+                slg_ito = 1 - Topt if illumination_mode == "rear" else None
     
             # Collection profile
             depths = np.linspace(0, params["CIGS"], 500)
@@ -1057,15 +1066,23 @@ class IQEFitApp:
                     header.append("Topt")
 
                 if IQE_refl is not None:
-                    header += ["IQE_fit_metal_reflection", "Absorbed_CIGS"]
-                    if illumination_mode == "front":
-                        header += ["CdS_absorption", "ZnO_absorption", "AZO_absorption"]
-                    header += ["ReTransmitted", "Absorbed_Metal"]
+                    header += [
+                        "IQE_fit_metal_reflection",
+                        "Absorbed_CIGS",
+                        "Absorbed_from_metal",
+                    ]
+                    header += ["ReTransmitted", "Absorbed_Metal", "SLG_ITO"]
                 else:
                     header += ["Absorbed_CIGS"]
                     if illumination_mode == "front":
-                        header += ["CdS_absorption", "ZnO_absorption", "AZO_absorption"]
+                        header += [
+                            "CdS_absorption",
+                            "ZnO_absorption",
+                            "AZO_absorption",
+                        ]
                     header += ["Transmitted"]
+                    if illumination_mode == "rear":
+                        header += ["SLG_ITO"]
                 header += ["Residual"]
                 writer.writerow(header)
     
@@ -1083,22 +1100,17 @@ class IQEFitApp:
                     if IQE_refl is not None:
                         row += [
                             IQE_refl[i],
-                            Topt[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7))
-                            + comeback_reflection[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7))
+                            absorbed_cigs[i],
                         ]
-                        if illumination_mode == "front":
-                            row += [cds_abs[i], zno_abs[i], azo_abs[i]]
-                        row += [
-                            comeback_reflection[i] * np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7),
-                            metal_absorbed[i],
-                        ]
+                        row += [absorbed_from_metal[i]]
+                        row += [transmitted[i], metal_absorbed[i], slg_ito[i]]
                     else:
-                        row += [
-                            Topt[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)) - IQE_fit[i]
-                        ]
+                        row += [absorbed_cigs[i]]
                         if illumination_mode == "front":
                             row += [cds_abs[i], zno_abs[i], azo_abs[i]]
-                        row.append(np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7))
+                        row += [transmitted[i]]
+                        if illumination_mode == "rear":
+                            row += [slg_ito[i]]
                     row.append(residual[i])
                     writer.writerow(row)
     
