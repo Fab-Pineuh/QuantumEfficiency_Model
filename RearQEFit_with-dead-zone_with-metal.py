@@ -890,7 +890,8 @@ class IQEFitApp:
             self.ax_main.set_ylabel("Quantum efficiency")
             self.ax_main.set_xlim(310, 830)
             self.ax_main.set_xticks(np.arange(320, 840, 40))
-            self.ax_main.set_ylim(0, 1)
+            # self.ax_main.set_ylim(0, 1)
+            self.ax_main.set_ylim(0.995, 1.005)
             self.ax_main.grid(True)
             self.ax_main.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
     
@@ -944,8 +945,7 @@ class IQEFitApp:
             self.r2_label.config(text=f"R² front={r_front:.4f} rear={r_rear:.4f}")
         else:
             self.r2_label.config(text=f"R² = {r_squared:.4f}")
-        
-        
+
     def save_all_results(self,illumination_mode):
         import csv
 
@@ -1485,8 +1485,8 @@ class IQEFitApp:
                         ]
                         print("   ✅ New best: " + ", ".join(formatted_values))
                         
-                    
-        
+
+            
             # Check if stage brought improvement
             if stage_improved:
                 print("   🎯 Improvement found in stage")
