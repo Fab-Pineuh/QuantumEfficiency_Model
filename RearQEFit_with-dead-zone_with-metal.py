@@ -1083,7 +1083,8 @@ class IQEFitApp:
                     if IQE_refl is not None:
                         row += [
                             IQE_refl[i],
-                            (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)) + comeback_reflection[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7))
+                            Topt[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7))
+                            + comeback_reflection[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7))
                         ]
                         if illumination_mode == "front":
                             row += [cds_abs[i], zno_abs[i], azo_abs[i]]
@@ -1093,7 +1094,7 @@ class IQEFitApp:
                         ]
                     else:
                         row += [
-                            (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)) - IQE_fit[i]
+                            Topt[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)) - IQE_fit[i]
                         ]
                         if illumination_mode == "front":
                             row += [cds_abs[i], zno_abs[i], azo_abs[i]]
