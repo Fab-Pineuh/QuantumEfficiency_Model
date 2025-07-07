@@ -987,9 +987,13 @@ class IQEFitApp:
                 n_zno, k_zno = load_and_interpolate_nk_csv('iZnO.csv', wavelength)
                 n_cds, k_cds = load_and_interpolate_nk_csv('CdS.csv', wavelength)
                 nk_data = [(n_azo, k_azo), (n_zno, k_zno), (n_cds, k_cds)]
-                
+
                 Topt, parasitic_abs = compute_Topt(wavelength, nk_data, [params["AZO"], params["ZnO"], params["CdS"]])
-                
+
+                cds_abs = parasitic_abs[0] * parasitic_abs[1] * (1 - parasitic_abs[2])
+                zno_abs = parasitic_abs[0] * (1 - parasitic_abs[1])
+                azo_abs = 1 - parasitic_abs[0]
+
                 IQE_fit, drift_comp, diff_comp = compute_IQE_components_front(
                     wavelength, alpha_CIGS, Topt, params["dSCR"], params["Ln"], params["CIGS"], params["dDEAD"], params["Recomb"]
                 )
@@ -1000,7 +1004,7 @@ class IQEFitApp:
                 IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
                     wavelength, alpha_CIGS, Topt, params["dSCR"], params["Ln"], params["CIGS"], params["dDEAD"], params["Recomb"]
                 )
-
+                cds_abs = zno_abs = azo_abs = None
     
             # Metal reflection if enabled
             if self.enable_metal_reflection.get() and self.metal_file.get():
@@ -1049,10 +1053,19 @@ class IQEFitApp:
     
                 # Main curves
                 header = ["Wavelength", "Experimental_IQE", "IQE_fit", "IQE_fit_SCR", "IQE_fit_Ln"]
+                if illumination_mode == "rear":
+                    header.append("Topt")
+
                 if IQE_refl is not None:
-                    header += ["IQE_fit_metal_reflection", "Absorbed_CIGS", "ReTransmitted", "Absorbed_Metal"]
+                    header += ["IQE_fit_metal_reflection", "Absorbed_CIGS"]
+                    if illumination_mode == "front":
+                        header += ["CdS_absorption", "ZnO_absorption", "AZO_absorption"]
+                    header += ["ReTransmitted", "Absorbed_Metal"]
                 else:
-                    header += ["Absorbed_CIGS", "Transmitted"]
+                    header += ["Absorbed_CIGS"]
+                    if illumination_mode == "front":
+                        header += ["CdS_absorption", "ZnO_absorption", "AZO_absorption"]
+                    header += ["Transmitted"]
                 header += ["Residual"]
                 writer.writerow(header)
     
@@ -1064,22 +1077,29 @@ class IQEFitApp:
                         drift_comp[i],
                         diff_comp[i]
                     ]
+                    if illumination_mode == "rear":
+                        row.append(Topt[i])
+
                     if IQE_refl is not None:
                         row += [
                             IQE_refl[i],
-                            (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)) + comeback_reflection[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)),
+                            (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)) + comeback_reflection[i] * (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7))
+                        ]
+                        if illumination_mode == "front":
+                            row += [cds_abs[i], zno_abs[i], azo_abs[i]]
+                        row += [
                             comeback_reflection[i] * np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7),
                             metal_absorbed[i],
                         ]
                     else:
                         row += [
-                            (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)) - IQE_fit[i],
-                            np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)
+                            (1 - np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7)) - IQE_fit[i]
                         ]
+                        if illumination_mode == "front":
+                            row += [cds_abs[i], zno_abs[i], azo_abs[i]]
+                        row.append(np.exp(-alpha_CIGS[i] * params["CIGS"] * 1e-7))
                     row.append(residual[i])
                     writer.writerow(row)
-    
-                writer.writerow([])
     
                 # Collection profile
                 writer.writerow(["Depth_in_CIGS", "Collection_Efficiency"])
