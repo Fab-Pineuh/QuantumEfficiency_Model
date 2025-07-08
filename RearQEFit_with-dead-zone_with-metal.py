@@ -129,6 +129,7 @@ def compute_IQE_components_rear(wavelength, alpha_CIGS, Topt, d_SCR, L_n, d_CIGS
         num = np.sinh(arg1) + (Sback * L_cm / D) * np.cosh(arg1)
         denom = np.sinh(arg2) + (Sback * L_cm / D) * np.cosh(arg2)
         P_diff = num / denom
+        print(num,denom,P_diff)
         QNR_abs = np.exp(-alpha_CIGS * w_cm) - np.exp(-alpha_CIGS * d_coll)
         IQE_diff = P_diff * QNR_abs
 
