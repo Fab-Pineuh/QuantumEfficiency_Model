@@ -130,11 +130,16 @@ def compute_IQE_components_rear(wavelength, alpha_CIGS, Topt, d_SCR, L_n, d_CIGS
     else:
         L_cm = L_n * 1e-7
         D = 2.0  # cm^2/s for CIGS
-        arg1 = np.clip((d_coll - w_cm) / L_cm, -40, 40)
-        arg2 = np.clip(d_coll / L_cm, -40, 40)
-        num = np.sinh(arg1) + (Sback * L_cm / D) * np.cosh(arg1)
-        denom = np.sinh(arg2) + (Sback * L_cm / D) * np.cosh(arg2)
-        P_diff = num / denom
+        arg1 = (d_coll - w_cm) / L_cm
+        arg2 = d_coll / L_cm
+        s = Sback * L_cm / D
+
+        # Compute collection probability using a numerically stable form
+        exp_diff = np.exp(np.clip(arg1 - arg2, -700, 700))
+        num_factor = (1 + s) - (1 - s) * np.exp(-2 * arg1)
+        denom_factor = (1 + s) - (1 - s) * np.exp(-2 * arg2)
+        P_diff = exp_diff * num_factor / denom_factor
+
         QNR_abs = np.exp(-alpha_CIGS * w_cm) - np.exp(-alpha_CIGS * d_coll)
         IQE_diff = P_diff * QNR_abs
 
