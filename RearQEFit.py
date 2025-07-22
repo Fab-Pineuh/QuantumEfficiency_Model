@@ -40,7 +40,6 @@ PARAMS_BY_MODE = {
         "dSCR": (450, 0, 2000),
         "Ln": (50, 0.01, 2000),
         "dDEAD": (0, 0, 500),
-        "Sback": (1e6, 1e4, 1e8),
     },
     "both": {
         "EgShift": (1.0, 0.95, 1.05),
@@ -52,7 +51,6 @@ PARAMS_BY_MODE = {
         "dSCR": (450, 0, 2000),
         "Ln": (50, 0.01, 2000),
         "dDEAD": (0, 0, 500),
-        "Sback": (1e6, 1e4, 1e8),
     }
 }
 
@@ -92,15 +90,9 @@ def compute_alpha(k, wavelength):
 
 
 # --- Compute IQE model ---
-def compute_IQE_components_rear(wavelength, alpha_CIGS, Topt, d_SCR, L_n, d_CIGS, d_DEAD, recomb_factor, Sback):
+def compute_IQE_components_rear(wavelength, alpha_CIGS, Topt, d_SCR, L_n, d_CIGS, d_DEAD, recomb_factor):
     """
-    Rear-side IQE model with dead zone and finite back surface recombination velocity.
-
-    Parameters
-    ----------
-    Sback : float
-        Back surface recombination velocity in cm/s.
-
+    Rear-side IQE model with dead zone:
     - d_DEAD is a region where light is absorbed but no carriers are collected.
     - Collection ends at d_coll = d_CIGS - d_DEAD
     """
@@ -129,19 +121,10 @@ def compute_IQE_components_rear(wavelength, alpha_CIGS, Topt, d_SCR, L_n, d_CIGS
         IQE_diff = np.zeros_like(alpha_CIGS)
     else:
         L_cm = L_n * 1e-7
-        D = 2.0  # cm^2/s for CIGS
-        arg1 = (d_coll - w_cm) / L_cm
-        arg2 = d_coll / L_cm
-        s = Sback * L_cm / D
-
-        # Compute collection probability using a numerically stable form
-        exp_diff = np.exp(np.clip(arg1 - arg2, -700, 700))
-        num_factor = (1 + s) - (1 - s) * np.exp(-2 * arg1)
-        denom_factor = (1 + s) - (1 - s) * np.exp(-2 * arg2)
-        P_diff = exp_diff * num_factor / denom_factor
-
-        QNR_abs = np.exp(-alpha_CIGS * w_cm) - np.exp(-alpha_CIGS * d_coll)
-        IQE_diff = P_diff * QNR_abs
+        prefactor = (alpha_CIGS * L_cm) / (1 + alpha_CIGS * L_cm)
+        term = np.clip((alpha_CIGS + 1 / L_cm) * (d_coll - w_cm), 0, 700)
+        decay_term = np.exp(-term)
+        IQE_diff = prefactor * (1 - decay_term)
 
     # Total IQE
     IQE_total = recomb_factor * Topt * (IQE_drift + IQE_diff)
@@ -640,11 +623,11 @@ class IQEFitApp:
 
         try:
             if illumination_mode=="front":
-                final_params = {param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"]}
+                final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"] }
             elif illumination_mode=="rear":
-                final_params = {param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb", "Sback"]}
+                final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb"] }
             elif illumination_mode=="both":
-                final_params = {param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS", "Sback"]}
+                final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"] }
             
         except ValueError:
             self.ax_main.clear()
@@ -690,15 +673,7 @@ class IQEFitApp:
             Topt = load_Topt_from_file('Topt_from_ITO.csv', wavelength)
 
             IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
-                wavelength,
-                alpha_CIGS,
-                Topt,
-                final_params["dSCR"],
-                final_params["Ln"],
-                final_params["CIGS"],
-                final_params["dDEAD"],
-                final_params["Recomb"],
-                final_params["Sback"],
+                wavelength, alpha_CIGS, Topt, final_params["dSCR"], final_params["Ln"], final_params["CIGS"], final_params["dDEAD"], final_params["Recomb"]
             )
 
         else:
@@ -733,7 +708,6 @@ class IQEFitApp:
                 final_params["CIGS"],
                 final_params["dDEAD"],
                 final_params["Recomb"],
-                final_params["Sback"],
             )
 
 
@@ -992,9 +966,9 @@ class IQEFitApp:
             
             try:
                 if illumination_mode=="front":
-                    params = {param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"]}
+                    params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"] }
                 elif illumination_mode=="rear":
-                    params = {param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb", "Sback"]}
+                    params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb"] }
             except Exception as e:
                 print("❌ Save error:", e)
                 traceback.print_exc()
@@ -1027,15 +1001,7 @@ class IQEFitApp:
                 Topt = load_Topt_from_file('Topt_from_ITO.csv', wavelength)
                 
                 IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
-                    wavelength,
-                    alpha_CIGS,
-                    Topt,
-                    params["dSCR"],
-                    params["Ln"],
-                    params["CIGS"],
-                    params["dDEAD"],
-                    params["Recomb"],
-                    params["Sback"],
+                    wavelength, alpha_CIGS, Topt, params["dSCR"], params["Ln"], params["CIGS"], params["dDEAD"], params["Recomb"]
                 )
                 cds_abs = zno_abs = azo_abs = None
     
@@ -1195,12 +1161,12 @@ class IQEFitApp:
             wl, EQE_meas, Reflectance = self.load_data_files("front")
             IQE_exp = EQE_meas / (1 - Reflectance)
         elif illumination_mode == "rear":
-            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "Sback"]
+            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb"]
             required = [self.eqe_file_rear.get(), self.rfl_file_rear.get()]
             wl, EQE_meas, Reflectance = self.load_data_files("rear")
             IQE_exp = EQE_meas / (1 - Reflectance)
         else:
-            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "AZO", "ZnO", "CdS", "Sback"]
+            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "AZO", "ZnO", "CdS"]
             required = [
                 self.eqe_file_front.get(),
                 self.rfl_file_front.get(),
@@ -1278,15 +1244,7 @@ class IQEFitApp:
                 elif illumination_mode == "rear":
                     Topt = load_Topt_from_file('Topt_from_ITO.csv', wl)
                     IQE_fit, _, _ = compute_IQE_components_rear(
-                        wl,
-                        alpha_CIGS,
-                        Topt,
-                        p["dSCR"],
-                        p["Ln"],
-                        p["CIGS"],
-                        p["dDEAD"],
-                        p["Recomb"],
-                        p["Sback"],
+                        wl, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
                     return np.sum((IQE_fit - IQE_exp) ** 2) / np.sum((IQE_exp - np.mean(IQE_exp)) ** 2)
 
@@ -1303,15 +1261,7 @@ class IQEFitApp:
 
                     Topt_rear = load_Topt_from_file('Topt_from_ITO.csv', wl_rear)
                     IQE_fit_rear, _, _ = compute_IQE_components_rear(
-                        wl_rear,
-                        alpha_CIGS_rear,
-                        Topt_rear,
-                        p["dSCR"],
-                        p["Ln"],
-                        p["CIGS"],
-                        p["dDEAD"],
-                        p["Recomb"],
-                        p["Sback"],
+                        wl_rear, alpha_CIGS_rear, Topt_rear, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
 
                     err_front = np.sum((IQE_fit_front - IQE_exp_front) ** 2) / np.sum((IQE_exp_front - np.mean(IQE_exp_front)) ** 2)
@@ -1362,15 +1312,7 @@ class IQEFitApp:
                 elif illumination_mode == "rear":
                     Topt = load_Topt_from_file('Topt_from_ITO.csv', wl)
                     IQE_fit, _, _ = compute_IQE_components_rear(
-                        wl,
-                        alpha_CIGS,
-                        Topt,
-                        p["dSCR"],
-                        p["Ln"],
-                        p["CIGS"],
-                        p["dDEAD"],
-                        p["Recomb"],
-                        p["Sback"],
+                        wl, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
                     return IQE_fit - IQE_exp
 
@@ -1385,15 +1327,7 @@ class IQEFitApp:
                     )
                     Topt_rear = load_Topt_from_file('Topt_from_ITO.csv', wl_rear)
                     IQE_fit_rear, _, _ = compute_IQE_components_rear(
-                        wl_rear,
-                        alpha_CIGS_rear,
-                        Topt_rear,
-                        p["dSCR"],
-                        p["Ln"],
-                        p["CIGS"],
-                        p["dDEAD"],
-                        p["Recomb"],
-                        p["Sback"],
+                        wl_rear, alpha_CIGS_rear, Topt_rear, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
                     return np.concatenate([IQE_fit_front - IQE_exp_front, IQE_fit_rear - IQE_exp_rear])
 
