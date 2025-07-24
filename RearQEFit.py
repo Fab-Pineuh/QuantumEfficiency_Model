@@ -36,6 +36,7 @@ PARAMS_BY_MODE = {
     "rear": {
         "EgShift": (1.0, 0.95, 1.05),
         "Recomb": (1.0, 0.8, 1.0),
+        "SLG": (1100000, 1090000, 1110000),
         "ITO": (100,90,115),
         "CIGS": (500, 300, 2000),
         "dSCR": (450, 0, 2000),
@@ -48,6 +49,7 @@ PARAMS_BY_MODE = {
         "AZO": (160, 140, 180),
         "ZnO": (20, 10, 60),
         "CdS": (38, 30, 45),
+        "SLG": (1100000, 1090000, 1110000),
         "ITO": (100,90,115),
         "CIGS": (500, 300, 2000),
         "dSCR": (450, 0, 2000),
@@ -277,9 +279,9 @@ class IQEFitApp:
         bounds = get_param_bounds(mode)
 
         default_fixed = {
-            "rear": ["ITO", "CIGS", "Recomb", "dDEAD"],
+            "rear": ["SLG", "ITO", "CIGS", "Recomb", "dDEAD"],
             "front": ["AZO", "ZnO", "CdS", "CIGS", "dDEAD", "Recomb"],
-            "both": ["AZO", "ZnO", "CdS", "ITO", "CIGS", "dDEAD", "Recomb"]
+            "both": ["AZO", "ZnO", "CdS", "SLG", "ITO", "CIGS", "dDEAD", "Recomb"]
         }
     
         for param in bounds:
@@ -620,9 +622,9 @@ class IQEFitApp:
             if illumination_mode=="front":
                 final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"] }
             elif illumination_mode=="rear":
-                final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb", "ITO"] }
+                final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb", "SLG", "ITO"] }
             elif illumination_mode=="both":
-                final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS", "ITO"] }
+                final_params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS", "SLG", "ITO"] }
             
         except ValueError:
             self.ax_main.clear()
@@ -664,9 +666,12 @@ class IQEFitApp:
                 wavelength, alpha_CIGS, Topt, final_params["dSCR"], final_params["Ln"], final_params["CIGS"], final_params["dDEAD"], final_params["Recomb"]
             )
         elif illumination_mode=="rear":
+            n_slg, k_slg = load_and_interpolate_nk_csv('SLG.csv', wavelength)
             n_ito, k_ito = load_and_interpolate_nk_csv('ITO.csv', wavelength)
-            alpha_ito = compute_alpha(k_ito, wavelength)
-            Topt = np.exp(-alpha_ito * final_params["ITO"] * 1e-7)
+            nk_data = [(n_slg, k_slg), (n_ito, k_ito)]
+            Topt, parasitic_abs_rear = compute_Topt(wavelength, nk_data, [final_params["SLG"], final_params["ITO"]])
+            slg_abs = 1 - parasitic_abs_rear[0]
+            ito_abs = parasitic_abs_rear[0] * (1 - parasitic_abs_rear[1])
 
         else:
             n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wl_front)
@@ -679,9 +684,12 @@ class IQEFitApp:
                 nk_data,
                 [final_params["AZO"], final_params["ZnO"], final_params["CdS"]],
             )
+            n_slg_r, k_slg_r = load_and_interpolate_nk_csv('SLG.csv', wl_rear)
             n_ito_r, k_ito_r = load_and_interpolate_nk_csv('ITO.csv', wl_rear)
-            alpha_ito_r = compute_alpha(k_ito_r, wl_rear)
-            Topt_rear = np.exp(-alpha_ito_r * final_params["ITO"] * 1e-7)
+            nk_data_rear = [(n_slg_r, k_slg_r), (n_ito_r, k_ito_r)]
+            Topt_rear, parasitic_abs_rear = compute_Topt(wl_rear, nk_data_rear, [final_params["SLG"], final_params["ITO"]])
+            slg_abs_rear = 1 - parasitic_abs_rear[0]
+            ito_abs_rear = parasitic_abs_rear[0] * (1 - parasitic_abs_rear[1])
 
             IQE_fit_front, drift_comp_front, diff_comp_front = compute_IQE_components_front(
                 wl_front,
@@ -802,9 +810,10 @@ class IQEFitApp:
                 IQE_fit_rear,
                 Topt_rear * (1 - np.exp(-alpha_CIGS_rear * dCIGS * 1e-7)) - IQE_fit_rear,
                 Topt_rear * np.exp(-alpha_CIGS_rear * dCIGS * 1e-7),
-                1-Topt_rear,
-                labels=["Collected", "Absorbed", "Transmitted", "SLG/ITO"],
-                colors=["#eff821", "#ffdd36", "#00cbcc", "#c0ffee"],
+                slg_abs_rear,
+                ito_abs_rear,
+                labels=["Collected", "Absorbed", "Transmitted", "SLG", "ITO"],
+                colors=["#eff821", "#ffdd36", "#00cbcc", "#e7e68f", "#c0ffee"],
             )
             self.ax_main_rear.plot(wl_rear, IQE_fit_rear, "r-", linewidth=2, label="Fit (line)")
             self.ax_main_rear.plot(
@@ -834,9 +843,10 @@ class IQEFitApp:
                 comeback_reflection*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)),
                 comeback_reflection * np.exp(-alpha_CIGS*dCIGS*1e-7),
                 metal_absorbed,
-                1-Topt,
-                labels=["Collected", "Absorbed","Absorbed thanks to metal", "Re-Transmitted", "Absorbed (Metal)", "SLG/ITO"],
-                colors=["#eff821", "#ffdd36", "#ff6600", "#00cbcc", "#c0c0c0", "#c0ffee"]
+                slg_abs,
+                ito_abs,
+                labels=["Collected", "Absorbed","Absorbed thanks to metal", "Re-Transmitted", "Absorbed (Metal)", "SLG", "ITO"],
+                colors=["#eff821", "#ffdd36", "#ff6600", "#00cbcc", "#c0c0c0", "#c0ffee", "#a0a0a0"]
             )
             
         elif illumination_mode=="rear":
@@ -845,9 +855,10 @@ class IQEFitApp:
                 IQE_fit,                                             # Collected
                 Topt*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)) - IQE_fit,  # Absorbed but lost
                 Topt*(np.exp(-alpha_CIGS * dCIGS * 1e-7)),                 # Transmitted
-                1-Topt,
-                labels=["Collected", "Absorbed", "Transmitted","SLG/ITO"],
-                colors=["#eff821", "#ffdd36", "#00cbcc", "#c0ffee"]
+                slg_abs,
+                ito_abs,
+                labels=["Collected", "Absorbed", "Transmitted","SLG", "ITO"],
+                colors=["#eff821", "#ffdd36", "#00cbcc", "#c0ffee", "#a0a0a0"]
             )
         elif illumination_mode=="front":
             
@@ -962,7 +973,7 @@ class IQEFitApp:
                 if illumination_mode=="front":
                     params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb","AZO", "ZnO", "CdS"] }
                 elif illumination_mode=="rear":
-                    params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb", "ITO"] }
+                    params = { param: float(self.entries[param].get()) for param in ["EgShift","dDEAD", "CIGS", "dSCR", "Ln", "Recomb", "SLG", "ITO"] }
             except Exception as e:
                 print("❌ Save error:", e)
                 traceback.print_exc()
@@ -990,14 +1001,12 @@ class IQEFitApp:
                     wavelength, alpha_CIGS, Topt, params["dSCR"], params["Ln"], params["CIGS"], params["dDEAD"], params["Recomb"]
                 )
             elif illumination_mode=="rear":
+                n_slg, k_slg = load_and_interpolate_nk_csv('SLG.csv', wavelength)
                 n_ito, k_ito = load_and_interpolate_nk_csv('ITO.csv', wavelength)
-                alpha_ito = compute_alpha(k_ito, wavelength)
-                Topt = np.exp(-alpha_ito * params["ITO"] * 1e-7)
-                
-                IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
-                    wavelength, alpha_CIGS, Topt, params["dSCR"], params["Ln"], params["CIGS"], params["dDEAD"], params["Recomb"]
-                )
-                cds_abs = zno_abs = azo_abs = None
+                nk_data = [(n_slg, k_slg), (n_ito, k_ito)]
+                Topt, parasitic_abs_rear = compute_Topt(wavelength, nk_data, [params["SLG"], params["ITO"]])
+                slg_abs_arr = 1 - parasitic_abs_rear[0]
+                ito_abs_arr = parasitic_abs_rear[0] * (1 - parasitic_abs_rear[1])
     
             # Metal reflection if enabled
             if self.enable_metal_reflection.get() and self.metal_file.get():
@@ -1021,11 +1030,16 @@ class IQEFitApp:
                 absorbed_cigs = Topt * (1 - np.exp(-alpha_CIGS * params["CIGS"] * 1e-7)) - IQE_fit_total
                 absorbed_from_metal = comeback_reflection * (1 - np.exp(-alpha_CIGS * params["CIGS"] * 1e-7))
                 transmitted = comeback_reflection * np.exp(-alpha_CIGS * params["CIGS"] * 1e-7)
-                slg_ito = 1 - Topt
+                slg_abs = slg_abs_arr
+                ito_abs = ito_abs_arr
             else:
                 absorbed_cigs = Topt * (1 - np.exp(-alpha_CIGS * params["CIGS"] * 1e-7)) - IQE_fit
                 transmitted = Topt * np.exp(-alpha_CIGS * params["CIGS"] * 1e-7)
-                slg_ito = 1 - Topt if illumination_mode == "rear" else None
+                if illumination_mode == "rear":
+                    slg_abs = slg_abs_arr
+                    ito_abs = ito_abs_arr
+                else:
+                    slg_abs = ito_abs = None
     
             # Collection profile
             depths = np.linspace(0, params["CIGS"], 500)
@@ -1065,9 +1079,11 @@ class IQEFitApp:
                         "Absorbed_CIGS",
                         "Absorbed_from_metal",
                     ]
-                    header += ["ReTransmitted", "Absorbed_Metal", "SLG_ITO"]
+                    header += ["ReTransmitted", "Absorbed_Metal", "SLG_absorption", "ITO_absorption"]
                 else:
+
                     header += ["Absorbed_CIGS"]
+
                     if illumination_mode == "front":
                         header += [
                             "CdS_absorption",
@@ -1076,9 +1092,11 @@ class IQEFitApp:
                         ]
                     header += ["Transmitted"]
                     if illumination_mode == "rear":
-                        header += ["SLG_ITO"]
+                        header += ["SLG_absorption", "ITO_absorption"]
                 header += ["Residual"]
+
                 writer.writerow(header)
+
     
                 for i in range(len(wavelength)):
                     row = [
@@ -1097,14 +1115,14 @@ class IQEFitApp:
                             absorbed_cigs[i],
                         ]
                         row += [absorbed_from_metal[i]]
-                        row += [transmitted[i], metal_absorbed[i], slg_ito[i]]
+                        row += [transmitted[i], metal_absorbed[i], slg_abs[i], ito_abs[i]]
                     else:
                         row += [absorbed_cigs[i]]
                         if illumination_mode == "front":
                             row += [cds_abs[i], zno_abs[i], azo_abs[i]]
                         row += [transmitted[i]]
                         if illumination_mode == "rear":
-                            row += [slg_ito[i]]
+                            row += [slg_abs[i], ito_abs[i]]
                     row.append(residual[i])
                     writer.writerow(row)
     
@@ -1155,12 +1173,12 @@ class IQEFitApp:
             wl, EQE_meas, Reflectance = self.load_data_files("front")
             IQE_exp = EQE_meas / (1 - Reflectance)
         elif illumination_mode == "rear":
-            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "ITO"]
+            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "SLG", "ITO"]
             required = [self.eqe_file_rear.get(), self.rfl_file_rear.get()]
             wl, EQE_meas, Reflectance = self.load_data_files("rear")
             IQE_exp = EQE_meas / (1 - Reflectance)
         else:
-            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "AZO", "ZnO", "CdS", "ITO"]
+            parameters_list = ["dDEAD", "dSCR", "Ln", "CIGS", "EgShift", "Recomb", "AZO", "ZnO", "CdS", "SLG", "ITO"]
             required = [
                 self.eqe_file_front.get(),
                 self.rfl_file_front.get(),
@@ -1236,9 +1254,10 @@ class IQEFitApp:
                     return np.sum((IQE_fit - IQE_exp) ** 2) / np.sum((IQE_exp - np.mean(IQE_exp)) ** 2)
 
                 elif illumination_mode == "rear":
+                    n_slg, k_slg = load_and_interpolate_nk_csv('SLG.csv', wl)
                     n_ito, k_ito = load_and_interpolate_nk_csv('ITO.csv', wl)
-                    alpha_ito = compute_alpha(k_ito, wl)
-                    Topt = np.exp(-alpha_ito * p["ITO"] * 1e-7)
+                    nk_data = [(n_slg, k_slg), (n_ito, k_ito)]
+                    Topt, _ = compute_Topt(wl, nk_data, [p["SLG"], p["ITO"]])
                     IQE_fit, _, _ = compute_IQE_components_rear(
                         wl, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
@@ -1254,10 +1273,11 @@ class IQEFitApp:
                     IQE_fit_front, _, _ = compute_IQE_components_front(
                         wl_front, alpha_CIGS_front, Topt_front, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
-
+                    
+                    n_slg_r, k_slg_r = load_and_interpolate_nk_csv('SLG.csv', wl_rear)
                     n_ito_r, k_ito_r = load_and_interpolate_nk_csv('ITO.csv', wl_rear)
-                    alpha_ito_r = compute_alpha(k_ito_r, wl_rear)
-                    Topt_rear = np.exp(-alpha_ito_r * p["ITO"] * 1e-7)
+                    nk_data_rear = [(n_slg_r, k_slg_r), (n_ito_r, k_ito_r)]
+                    Topt_rear, _ = compute_Topt(wl_rear, nk_data_rear, [p["SLG"], p["ITO"]])
                     
                     IQE_fit_rear, _, _ = compute_IQE_components_rear(
                         wl_rear, alpha_CIGS_rear, Topt_rear, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
@@ -1309,9 +1329,10 @@ class IQEFitApp:
                     return IQE_fit - IQE_exp
 
                 elif illumination_mode == "rear":
+                    n_slg, k_slg = load_and_interpolate_nk_csv('SLG.csv', wl)
                     n_ito, k_ito = load_and_interpolate_nk_csv('ITO.csv', wl)
-                    alpha_ito = compute_alpha(k_ito, wl)
-                    Topt = np.exp(-alpha_ito * p["ITO"] * 1e-7)
+                    nk_data = [(n_slg, k_slg), (n_ito, k_ito)]
+                    Topt, _ = compute_Topt(wl, nk_data, [p["SLG"], p["ITO"]])
                     IQE_fit, _, _ = compute_IQE_components_rear(
                         wl, alpha_CIGS, Topt, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
@@ -1326,9 +1347,10 @@ class IQEFitApp:
                     IQE_fit_front, _, _ = compute_IQE_components_front(
                         wl_front, alpha_CIGS_front, Topt_front, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
+                    n_slg_r, k_slg_r = load_and_interpolate_nk_csv('SLG.csv', wl_rear)
                     n_ito_r, k_ito_r = load_and_interpolate_nk_csv('ITO.csv', wl_rear)
-                    alpha_ito_r = compute_alpha(k_ito_r, wl_rear)
-                    Topt_rear = np.exp(-alpha_ito_r * p["ITO"] * 1e-7)
+                    nk_data_rear = [(n_slg_r, k_slg_r), (n_ito_r, k_ito_r)]
+                    Topt_rear, _ = compute_Topt(wl_rear, nk_data_rear, [p["SLG"], p["ITO"]])
                     IQE_fit_rear, _, _ = compute_IQE_components_rear(
                         wl_rear, alpha_CIGS_rear, Topt_rear, p["dSCR"], p["Ln"], p["CIGS"], p["dDEAD"], p["Recomb"]
                     )
