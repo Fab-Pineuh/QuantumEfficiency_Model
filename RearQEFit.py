@@ -836,18 +836,61 @@ class IQEFitApp:
             self.ax_main_rear.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
             
         elif self.enable_metal_reflection.get() and self.metal_file.get():
-            self.ax_main.stackplot(
-                wavelength,
-                IQE_fit,
-                Topt*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7))  - IQE_fit,
-                comeback_reflection*(1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)),
-                comeback_reflection * np.exp(-alpha_CIGS*dCIGS*1e-7),
-                metal_absorbed,
-                slg_abs,
-                ito_abs,
-                labels=["Collected", "Absorbed","Absorbed thanks to metal", "Re-Transmitted", "Absorbed (Metal)", "SLG", "ITO"],
-                colors=["#eff821", "#ffdd36", "#ff6600", "#00cbcc", "#c0c0c0", "#c0ffee", "#a0a0a0"]
-            )
+            if illumination_mode == "rear":
+                self.ax_main.stackplot(
+                    wavelength,
+                    IQE_fit,
+                    Topt * (1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)) - IQE_fit,
+                    comeback_reflection * (1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)),
+                    comeback_reflection * np.exp(-alpha_CIGS * dCIGS * 1e-7),
+                    metal_absorbed,
+                    slg_abs,
+                    ito_abs,
+                    labels=[
+                        "Collected",
+                        "Absorbed",
+                        "Absorbed thanks to metal",
+                        "Re-Transmitted",
+                        "Absorbed (Metal)",
+                        "SLG absorption",
+                        "ITO absorption",
+                    ],
+                    colors=[
+                        "#eff821",
+                        "#ffdd36",
+                        "#ff6600",
+                        "#00cbcc",
+                        "#c0c0c0",
+                        "#c0ffee",
+                        "#a0a0a0",
+                    ],
+                )
+            else:  # front illumination
+                self.ax_main.stackplot(
+                    wavelength,
+                    IQE_fit,
+                    Topt * (1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)) - IQE_fit,
+                    comeback_reflection * (1 - np.exp(-alpha_CIGS * dCIGS * 1e-7)),
+                    comeback_reflection * np.exp(-alpha_CIGS * dCIGS * 1e-7),
+                    metal_absorbed,
+                    1 - Topt,
+                    labels=[
+                        "Collected",
+                        "Absorbed",
+                        "Absorbed thanks to metal",
+                        "Re-Transmitted",
+                        "Absorbed (Metal)",
+                        "Parasitic",
+                    ],
+                    colors=[
+                        "#eff821",
+                        "#ffdd36",
+                        "#ff6600",
+                        "#00cbcc",
+                        "#c0c0c0",
+                        "#c0ffee",
+                    ],
+                )
             
         elif illumination_mode=="rear":
             self.ax_main.stackplot(
@@ -1079,7 +1122,9 @@ class IQEFitApp:
                         "Absorbed_CIGS",
                         "Absorbed_from_metal",
                     ]
-                    header += ["ReTransmitted", "Absorbed_Metal", "SLG_absorption", "ITO_absorption"]
+                    header += ["ReTransmitted", "Absorbed_Metal"]
+                    if illumination_mode == "rear":
+                        header += ["SLG_absorption", "ITO_absorption"]
                 else:
 
                     header += ["Absorbed_CIGS"]
@@ -1115,7 +1160,9 @@ class IQEFitApp:
                             absorbed_cigs[i],
                         ]
                         row += [absorbed_from_metal[i]]
-                        row += [transmitted[i], metal_absorbed[i], slg_abs[i], ito_abs[i]]
+                        row += [transmitted[i], metal_absorbed[i]]
+                        if illumination_mode == "rear":
+                            row += [slg_abs[i], ito_abs[i]]
                     else:
                         row += [absorbed_cigs[i]]
                         if illumination_mode == "front":
