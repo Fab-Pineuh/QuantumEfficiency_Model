@@ -669,9 +669,23 @@ class IQEFitApp:
             n_slg, k_slg = load_and_interpolate_nk_csv('SLG.csv', wavelength)
             n_ito, k_ito = load_and_interpolate_nk_csv('ITO.csv', wavelength)
             nk_data = [(n_slg, k_slg), (n_ito, k_ito)]
-            Topt, parasitic_abs_rear = compute_Topt(wavelength, nk_data, [final_params["SLG"], final_params["ITO"]])
+            Topt, parasitic_abs_rear = compute_Topt(
+                wavelength,
+                nk_data,
+                [final_params["SLG"], final_params["ITO"]],
+            )
             slg_abs = 1 - parasitic_abs_rear[0]
             ito_abs = parasitic_abs_rear[0] * (1 - parasitic_abs_rear[1])
+            IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
+                wavelength,
+                alpha_CIGS,
+                Topt,
+                final_params["dSCR"],
+                final_params["Ln"],
+                final_params["CIGS"],
+                final_params["dDEAD"],
+                final_params["Recomb"],
+            )
 
         else:
             n_azo, k_azo = load_and_interpolate_nk_csv('AZO.csv', wl_front)
@@ -901,7 +915,7 @@ class IQEFitApp:
                 slg_abs,
                 ito_abs,
                 labels=["Collected", "Absorbed", "Transmitted","SLG", "ITO"],
-                colors=["#eff821", "#ffdd36", "#00cbcc", "#c0ffee", "#a0a0a0"]
+                colors=["#eff821", "#ffdd36", "#00cbcc", "#e7e68f", "#c0ffee"]
             )
         elif illumination_mode=="front":
             
@@ -1047,9 +1061,23 @@ class IQEFitApp:
                 n_slg, k_slg = load_and_interpolate_nk_csv('SLG.csv', wavelength)
                 n_ito, k_ito = load_and_interpolate_nk_csv('ITO.csv', wavelength)
                 nk_data = [(n_slg, k_slg), (n_ito, k_ito)]
-                Topt, parasitic_abs_rear = compute_Topt(wavelength, nk_data, [params["SLG"], params["ITO"]])
+                Topt, parasitic_abs_rear = compute_Topt(
+                    wavelength,
+                    nk_data,
+                    [params["SLG"], params["ITO"]],
+                )
                 slg_abs_arr = 1 - parasitic_abs_rear[0]
                 ito_abs_arr = parasitic_abs_rear[0] * (1 - parasitic_abs_rear[1])
+                IQE_fit, drift_comp, diff_comp = compute_IQE_components_rear(
+                    wavelength,
+                    alpha_CIGS,
+                    Topt,
+                    params["dSCR"],
+                    params["Ln"],
+                    params["CIGS"],
+                    params["dDEAD"],
+                    params["Recomb"],
+                )
     
             # Metal reflection if enabled
             if self.enable_metal_reflection.get() and self.metal_file.get():
